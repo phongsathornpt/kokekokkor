@@ -15,6 +15,7 @@ type Config struct {
 	DefaultProviderID string
 	ModelRoutes       map[string][]ModelRouteTarget
 	Anthropic         Anthropic
+	Gemini            Gemini
 }
 
 type HTTP struct {
@@ -34,6 +35,12 @@ type Anthropic struct {
 	Version string
 }
 
+type Gemini struct {
+	ID      string
+	BaseURL string
+	APIKey  string
+}
+
 type ModelRouteTarget struct {
 	ProviderID string `json:"provider"`
 	Model      string `json:"model,omitempty"`
@@ -50,6 +57,11 @@ func Load() (Config, error) {
 			BaseURL: os.Getenv("KOKEKOKKOR_ANTHROPIC_BASE_URL"),
 			APIKey:  os.Getenv("KOKEKOKKOR_ANTHROPIC_API_KEY"),
 			Version: envOr("KOKEKOKKOR_ANTHROPIC_VERSION", "2023-06-01"),
+		},
+		Gemini: Gemini{
+			ID:      envOr("KOKEKOKKOR_GEMINI_PROVIDER_ID", "gemini"),
+			BaseURL: os.Getenv("KOKEKOKKOR_GEMINI_BASE_URL"),
+			APIKey:  os.Getenv("KOKEKOKKOR_GEMINI_API_KEY"),
 		},
 	}
 
@@ -91,7 +103,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("http address must not be empty")
 	}
 
-	providers := make(map[string]string, len(c.Providers)+1)
+	providers := make(map[string]string, len(c.Providers)+2)
 	for _, configured := range c.Providers {
 		if strings.TrimSpace(configured.ID) == "" {
 			return fmt.Errorf("provider ID must not be empty")
@@ -119,6 +131,19 @@ func (c Config) Validate() error {
 			return fmt.Errorf("Anthropic provider %q: %w", c.Anthropic.ID, err)
 		}
 		providers[c.Anthropic.ID] = "Anthropic provider"
+	}
+
+	if c.Gemini.BaseURL != "" {
+		if strings.TrimSpace(c.Gemini.ID) == "" {
+			return fmt.Errorf("Gemini provider ID must not be empty")
+		}
+		if previous, exists := providers[c.Gemini.ID]; exists {
+			return fmt.Errorf("duplicate provider ID %q already used by %s", c.Gemini.ID, previous)
+		}
+		if err := validateBaseURL(c.Gemini.BaseURL); err != nil {
+			return fmt.Errorf("Gemini provider %q: %w", c.Gemini.ID, err)
+		}
+		providers[c.Gemini.ID] = "Gemini provider"
 	}
 
 	if c.DefaultProviderID != "" {
