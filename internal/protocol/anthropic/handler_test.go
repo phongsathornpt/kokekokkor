@@ -9,18 +9,25 @@ import (
 )
 
 type fakeForwarder struct {
-	called bool
-	target provider.Target
+	called        bool
+	target        provider.Target
+	allowFallback bool
+	err           error
 }
 
-func (f *fakeForwarder) ServeHTTPTo(w http.ResponseWriter, _ *http.Request, target provider.Target) {
+func (f *fakeForwarder) ServeHTTPTo(w http.ResponseWriter, _ *http.Request, target provider.Target, allowFallback bool) error {
 	f.called = true
 	f.target = target
+	f.allowFallback = allowFallback
+	if f.err != nil {
+		return f.err
+	}
 	w.WriteHeader(http.StatusAccepted)
+	return nil
 }
 
 func TestHandlerForwardsToConfiguredTarget(t *testing.T) {
-	target := &provider.Target{ID: "anthropic", BaseURL: "https://api.anthropic.com", APIKey: "secret"}
+	target := &provider.Target{ID: "anthropic", Protocol: provider.ProtocolAnthropic, BaseURL: "https://api.anthropic.com", APIKey: "secret"}
 	forwarder := &fakeForwarder{}
 	handler := NewHandler(target, forwarder)
 
@@ -31,7 +38,7 @@ func TestHandlerForwardsToConfiguredTarget(t *testing.T) {
 	if !handler.Ready() {
 		t.Fatal("Ready() = false, want true")
 	}
-	if !forwarder.called || forwarder.target.ID != "anthropic" {
+	if !forwarder.called || forwarder.target.ID != "anthropic" || forwarder.allowFallback {
 		t.Fatalf("forwarder = %#v", forwarder)
 	}
 	if rec.Code != http.StatusAccepted {

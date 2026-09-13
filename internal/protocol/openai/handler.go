@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
@@ -17,18 +18,23 @@ type Forwarder interface {
 }
 
 type Handler struct {
-	router    routing.Router
-	forwarder Forwarder
+	router     routing.Router
+	forwarder  Forwarder
+	translator CrossProtocolTranslator
 }
 
-func NewHandler(router routing.Router, forwarder Forwarder) *Handler {
-	return &Handler{router: router, forwarder: forwarder}
+func NewHandler(router routing.Router, forwarder Forwarder, translators ...CrossProtocolTranslator) *Handler {
+	handler := &Handler{router: router, forwarder: forwarder}
+	if len(translators) != 0 {
+		handler.translator = translators[0]
+	}
+	return handler
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	model := requestModel(r)
 	plan, err := h.router.Resolve(r.Context(), routing.Request{
-		Protocol:  "openai",
+		Protocol:  provider.ProtocolOpenAI,
 		Operation: r.URL.Path,
 		Model:     model,
 	})
@@ -47,9 +53,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Preserve the transparent fast path: one target and no alias means no
-	// full-body buffering or JSON re-encoding.
-	if len(plan.Attempts) == 1 && plan.Attempts[0].Model == model {
+	// Preserve the transparent fast path: one OpenAI-compatible target and no
+	// alias means no full-body buffering or JSON re-encoding.
+	if len(plan.Attempts) == 1 &&
+		plan.Attempts[0].Target.EffectiveProtocol() == provider.ProtocolOpenAI &&
+		plan.Attempts[0].Model == model {
 		if err := h.forwarder.ServeHTTPTo(w, r, plan.Attempts[0].Target, false); err != nil {
 			writeError(w, http.StatusBadGateway, "upstream_error", err.Error())
 		}
@@ -68,22 +76,38 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var lastErr error
 	for i, attempt := range plan.Attempts {
-		attemptBody := body
-		if attempt.Model != model {
-			attemptBody, err = rewriteTopLevelModel(body, attempt.Model)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		allowFallback := i < len(plan.Attempts)-1
+
+		switch attempt.Target.EffectiveProtocol() {
+		case provider.ProtocolOpenAI:
+			attemptBody := body
+			if attempt.Model != model {
+				attemptBody, err = rewriteTopLevelModel(body, attempt.Model)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+					return
+				}
+			}
+			attemptRequest := cloneWithBody(r, attemptBody)
+			if err := h.forwarder.ServeHTTPTo(w, attemptRequest, attempt.Target, allowFallback); err != nil {
+				lastErr = err
+				continue
+			}
+			return
+
+		case provider.ProtocolAnthropic:
+			done, attemptErr := h.serveAnthropicAttempt(w, r, body, attempt, allowFallback)
+			if done {
 				return
 			}
-		}
+			if attemptErr != nil {
+				lastErr = attemptErr
+				continue
+			}
 
-		attemptRequest := cloneWithBody(r, attemptBody)
-		allowFallback := i < len(plan.Attempts)-1
-		if err := h.forwarder.ServeHTTPTo(w, attemptRequest, attempt.Target, allowFallback); err != nil {
-			lastErr = err
-			continue
+		default:
+			lastErr = fmt.Errorf("unsupported upstream protocol %q", attempt.Target.Protocol)
 		}
-		return
 	}
 
 	if lastErr == nil {
