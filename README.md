@@ -10,15 +10,16 @@ The current implementation provides:
 - OpenAI-compatible `/v1/*` transparent reverse proxy
 - streaming-friendly `httputil.ReverseProxy` transport
 - multiple OpenAI-compatible upstream providers
-- exact model-to-provider routing with optional default fallback
+- client-visible model aliases to provider-specific upstream models
+- ordered provider/model fallback plans
 - lock-free immutable routing snapshots for hot-path reads
 - configurable upstream bearer credentials
 - optional gateway bearer authentication
 - liveness and readiness endpoints
 - graceful shutdown and structured logs
-- unit tests for routing, configuration, model extraction, authentication, and upstream forwarding
+- unit tests for routing, configuration, model rewriting, fallback, authentication, and upstream forwarding
 
-Anthropic, Gemini, protocol translation, OAuth, persistence, and the HTMX admin UI are intentionally staged after this transport and routing foundation.
+Anthropic, Gemini, cross-protocol translation, OAuth, persistence, and the HTMX admin UI are intentionally staged after this transport and routing foundation.
 
 ## Run
 
@@ -36,24 +37,66 @@ Then point an OpenAI-compatible client at `http://localhost:8080/v1` and use `KO
 
 ## Multi-provider routing
 
-For multiple upstreams, configure providers and model routes as JSON:
+Configure providers and model routes as JSON:
 
 ```bash
 export KOKEKOKKOR_PROVIDERS_JSON='[
-  {"id":"primary","base_url":"https://api.openai.com","api_key":"openai-key"},
-  {"id":"fast","base_url":"https://example-openai-compatible.invalid","api_key":"fast-key"}
+  {"id":"primary","base_url":"https://api.openai.com","api_key":"primary-key"},
+  {"id":"backup","base_url":"https://backup.example.com","api_key":"backup-key"}
 ]'
 export KOKEKOKKOR_DEFAULT_PROVIDER_ID=primary
 export KOKEKOKKOR_MODEL_ROUTES_JSON='{
-  "gpt-fast":"fast"
+  "native":"primary",
+  "fast":{"provider":"primary","model":"provider-fast-model"},
+  "smart":[
+    {"provider":"primary","model":"provider-smart-model"},
+    {"provider":"backup","model":"backup-smart-model"}
+  ]
 }'
 
 go run ./cmd/kokekokkor
 ```
 
-A JSON request whose top-level `model` is `gpt-fast` is routed to `fast`. Other models use `primary`. If no default provider is configured, unmatched models return `503 no_route` while explicitly mapped models continue to work.
+Route values support three forms:
 
-Model inspection preserves the original request bytes before proxying. Non-JSON bodies such as file uploads are not inspected.
+- a provider string, preserving the client model unchanged
+- one target object with `provider` and optional upstream `model`
+- an ordered array of target objects for fallback
+
+For the example above:
+
+- `native` goes to `primary` with model `native`
+- `fast` goes to `primary` after rewriting the top-level model to `provider-fast-model`
+- `smart` first tries `primary/provider-smart-model`, then falls back to `backup/backup-smart-model` when the first attempt fails safely
+- unmatched models use `primary`
+
+If no default provider is configured, unmatched models return `503 no_route` while explicitly mapped models continue to work.
+
+## Fallback semantics
+
+Fallback only happens before an upstream response is committed to the client.
+
+A non-final attempt can fall back on:
+
+- upstream transport/connect failures
+- HTTP `429`
+- HTTP `500`
+- HTTP `502`
+- HTTP `503`
+- HTTP `504`
+- HTTP `529` used by some LLM providers for overload
+
+Other upstream responses, including ordinary client errors such as `400`, are passed through immediately. The final attempt is authoritative, so its HTTP response is forwarded rather than hidden behind another retry.
+
+Once a response is accepted and starts streaming, the route is committed. kokekokkor does not switch providers midway through a streamed completion.
+
+## Request-body behavior
+
+A single route whose upstream model is unchanged remains on the transparent path: request bytes are forwarded without fully buffering or re-encoding the JSON body.
+
+Alias rewriting or ordered fallback requires a replayable JSON request body. Those requests are buffered up to 64 MiB so each provider attempt receives a fresh body. Alias rewriting changes only the semantic top-level `model` field while preserving unknown JSON fields.
+
+Non-JSON bodies such as multipart file uploads are not inspected for model routing.
 
 ## Configuration
 
@@ -63,7 +106,7 @@ Model inspection preserves the original request bytes before proxying. Non-JSON 
 | `KOKEKOKKOR_API_KEY` | empty | Optional client-facing bearer key |
 | `KOKEKOKKOR_PROVIDERS_JSON` | empty | JSON array of OpenAI-compatible providers |
 | `KOKEKOKKOR_DEFAULT_PROVIDER_ID` | empty | Provider used when no exact model route matches |
-| `KOKEKOKKOR_MODEL_ROUTES_JSON` | `{}` | JSON object mapping model names to provider IDs |
+| `KOKEKOKKOR_MODEL_ROUTES_JSON` | `{}` | Model routes as provider strings, target objects, or ordered target arrays |
 | `KOKEKOKKOR_OPENAI_PROVIDER_ID` | `default` | Legacy single-upstream identifier |
 | `KOKEKOKKOR_OPENAI_BASE_URL` | empty | Legacy single OpenAI-compatible upstream root URL |
 | `KOKEKOKKOR_OPENAI_API_KEY` | empty | Legacy single-upstream bearer credential |
@@ -87,10 +130,13 @@ make build
 client
   -> HTTP transport / auth
   -> OpenAI protocol adapter
-       -> inspect top-level model without consuming body
+       -> inspect client model
+       -> rewrite model only when an alias requires it
   -> immutable application router
+       -> ordered provider/model attempt plan
   -> OpenAI-compatible provider transport
+       -> pre-commit retry/fallback decision
   -> upstream
 ```
 
-Same-protocol traffic remains transparent. Later translation paths will decode into a canonical semantic representation only when the inbound and outbound protocols differ.
+Same-protocol traffic remains transparent when no transformation is required. Later translation paths will decode into a canonical semantic representation only when the inbound and outbound protocols differ.
