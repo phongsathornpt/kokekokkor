@@ -14,7 +14,9 @@ type memoryRepository struct {
 	snapshot domaincatalog.Snapshot
 }
 
-func (r *memoryRepository) Load(context.Context) (domaincatalog.Snapshot, error) { return cloneSnapshot(r.snapshot), nil }
+func (r *memoryRepository) Load(context.Context) (domaincatalog.Snapshot, error) {
+	return cloneSnapshot(r.snapshot), nil
+}
 func (r *memoryRepository) Replace(_ context.Context, snapshot domaincatalog.Snapshot) error {
 	r.snapshot = cloneSnapshot(snapshot)
 	return nil
