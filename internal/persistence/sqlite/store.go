@@ -182,21 +182,36 @@ func (s *Store) Replace(ctx context.Context, snapshot domaincatalog.Snapshot) er
 	if _, err := tx.ExecContext(ctx, `DELETE FROM protocol_defaults`); err != nil {
 		return fmt.Errorf("clear protocol defaults: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM providers`); err != nil {
-		return fmt.Errorf("clear providers: %w", err)
-	}
-	providerStmt, err := tx.PrepareContext(ctx, `INSERT INTO providers(id, protocol, base_url, enabled) VALUES (?, ?, ?, ?)`)
+	providerStmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO providers(id, protocol, base_url, enabled) VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			protocol = excluded.protocol,
+			base_url = excluded.base_url,
+			enabled = excluded.enabled
+	`)
 	if err != nil {
-		return fmt.Errorf("prepare provider insert: %w", err)
+		return fmt.Errorf("prepare provider upsert: %w", err)
 	}
 	defer providerStmt.Close()
+	providerIDs := make([]any, 0, len(snapshot.Providers))
 	for _, item := range snapshot.Providers {
 		enabled := 0
 		if item.Enabled {
 			enabled = 1
 		}
 		if _, err := providerStmt.ExecContext(ctx, item.ID, string(item.Protocol), item.BaseURL, enabled); err != nil {
-			return fmt.Errorf("insert provider %q: %w", item.ID, err)
+			return fmt.Errorf("upsert provider %q: %w", item.ID, err)
+		}
+		providerIDs = append(providerIDs, item.ID)
+	}
+	if len(providerIDs) == 0 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM providers`); err != nil {
+			return fmt.Errorf("delete stale providers: %w", err)
+		}
+	} else {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(providerIDs)), ",")
+		if _, err := tx.ExecContext(ctx, `DELETE FROM providers WHERE id NOT IN (`+placeholders+`)`, providerIDs...); err != nil {
+			return fmt.Errorf("delete stale providers: %w", err)
 		}
 	}
 	defaultStmt, err := tx.PrepareContext(ctx, `INSERT INTO protocol_defaults(protocol, provider_id) VALUES (?, ?)`)
