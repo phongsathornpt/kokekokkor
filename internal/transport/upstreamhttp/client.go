@@ -16,25 +16,23 @@ import (
 
 const maxResponseBodyBytes = 64 << 20
 
+type bearerTokenResolver interface {
+	BearerToken(context.Context, string) (string, bool, error)
+}
+
 type Client struct {
 	httpClient              *http.Client
 	defaultAnthropicVersion string
+	bearerTokens            bearerTokenResolver
 }
 
 func New(defaultAnthropicVersion string) *Client {
-	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          256,
-		MaxIdleConnsPerHost:   64,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 0,
-	}
-	return &Client{
-		httpClient:              &http.Client{Transport: transport},
-		defaultAnthropicVersion: defaultAnthropicVersion,
-	}
+	return NewWithBearerTokenResolver(defaultAnthropicVersion, nil)
+}
+
+func NewWithBearerTokenResolver(defaultAnthropicVersion string, bearerTokens bearerTokenResolver) *Client {
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, MaxIdleConns: 256, MaxIdleConnsPerHost: 64, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 0}
+	return &Client{httpClient: &http.Client{Transport: transport}, defaultAnthropicVersion: defaultAnthropicVersion, bearerTokens: bearerTokens}
 }
 
 func (c *Client) Do(ctx context.Context, target provider.Target, request upstream.Request) (upstream.Response, error) {
@@ -43,7 +41,6 @@ func (c *Client) Do(ctx context.Context, target provider.Target, request upstrea
 		return upstream.Response{}, err
 	}
 	defer stream.Body.Close()
-
 	limited := io.LimitReader(stream.Body, maxResponseBodyBytes+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
@@ -52,12 +49,7 @@ func (c *Client) Do(ctx context.Context, target provider.Target, request upstrea
 	if len(body) > maxResponseBodyBytes {
 		return upstream.Response{}, fmt.Errorf("upstream response exceeds %d byte translation limit", maxResponseBodyBytes)
 	}
-
-	return upstream.Response{
-		StatusCode: stream.StatusCode,
-		Header:     stream.Header,
-		Body:       body,
-	}, nil
+	return upstream.Response{StatusCode: stream.StatusCode, Header: stream.Header, Body: body}, nil
 }
 
 func (c *Client) Stream(ctx context.Context, target provider.Target, request upstream.Request) (upstream.StreamResponse, error) {
@@ -66,7 +58,6 @@ func (c *Client) Stream(ctx context.Context, target provider.Target, request ups
 		return upstream.StreamResponse{}, fmt.Errorf("parse upstream %q URL: %w", target.ID, err)
 	}
 	endpoint := joinURL(base, request.Path, request.RawQuery)
-
 	req, err := http.NewRequestWithContext(ctx, request.Method, endpoint.String(), bytes.NewReader(request.Body))
 	if err != nil {
 		return upstream.StreamResponse{}, fmt.Errorf("create upstream request: %w", err)
@@ -75,17 +66,30 @@ func (c *Client) Stream(ctx context.Context, target provider.Target, request ups
 	if req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	applyCredentials(req.Header, target, c.defaultAnthropicVersion)
-
+	bearerToken, err := c.resolveBearerToken(ctx, target.ID)
+	if err != nil {
+		return upstream.StreamResponse{}, err
+	}
+	applyCredentials(req.Header, target, bearerToken, c.defaultAnthropicVersion)
 	response, err := c.httpClient.Do(req)
 	if err != nil {
 		return upstream.StreamResponse{}, fmt.Errorf("execute upstream request: %w", err)
 	}
-	return upstream.StreamResponse{
-		StatusCode: response.StatusCode,
-		Header:     response.Header.Clone(),
-		Body:       response.Body,
-	}, nil
+	return upstream.StreamResponse{StatusCode: response.StatusCode, Header: response.Header.Clone(), Body: response.Body}, nil
+}
+
+func (c *Client) resolveBearerToken(ctx context.Context, providerID string) (string, error) {
+	if c.bearerTokens == nil {
+		return "", nil
+	}
+	token, found, err := c.bearerTokens.BearerToken(ctx, providerID)
+	if err != nil {
+		return "", fmt.Errorf("resolve upstream OAuth token: %w", err)
+	}
+	if !found {
+		return "", nil
+	}
+	return token, nil
 }
 
 func joinURL(base *url.URL, requestPath, rawQuery string) *url.URL {
@@ -113,7 +117,14 @@ func copySafeHeaders(dst, src http.Header) {
 	}
 }
 
-func applyCredentials(header http.Header, target provider.Target, defaultAnthropicVersion string) {
+func applyCredentials(header http.Header, target provider.Target, bearerToken, defaultAnthropicVersion string) {
+	if bearerToken != "" {
+		header.Set("Authorization", "Bearer "+bearerToken)
+		if target.EffectiveProtocol() == provider.ProtocolAnthropic && header.Get("Anthropic-Version") == "" && defaultAnthropicVersion != "" {
+			header.Set("Anthropic-Version", defaultAnthropicVersion)
+		}
+		return
+	}
 	switch target.EffectiveProtocol() {
 	case provider.ProtocolAnthropic:
 		if target.APIKey != "" {
