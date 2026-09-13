@@ -1,0 +1,32 @@
+name: gofmt-fix
+
+on:
+  push:
+    branches: [feat/provider-management]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+      - name: Format and commit
+        shell: bash
+        run: |
+          files="$(gofmt -l .)"
+          if [[ -z "$files" ]]; then
+            exit 0
+          fi
+          echo "$files"
+          gofmt -w .
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- '*.go'
+          git commit -m 'chore: gofmt provider management'
+          git push
