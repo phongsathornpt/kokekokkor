@@ -53,8 +53,8 @@ func TestOpenAIResponsesToGeminiTranslatesBufferedRequestAndResponse(t *testing.
 		Model      string `json:"model"`
 		OutputText string `json:"output_text"`
 		Usage      struct {
-			InputTokens  int64 `json:"input_tokens"`
-			OutputTokens int64 `json:"output_tokens"`
+			InputTokens   int64 `json:"input_tokens"`
+			OutputTokens  int64 `json:"output_tokens"`
 			OutputDetails struct {
 				ReasoningTokens int64 `json:"reasoning_tokens"`
 			} `json:"output_tokens_details"`
