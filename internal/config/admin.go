@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"strings"
 	"time"
 )
 
@@ -14,9 +13,9 @@ type Admin struct {
 }
 
 func LoadAdmin(gatewayAPIKey string) Admin {
-	password := strings.TrimSpace(os.Getenv("KOKEKOKKOR_ADMIN_PASSWORD"))
+	password := os.Getenv("KOKEKOKKOR_ADMIN_PASSWORD")
 	if password == "" {
-		password = strings.TrimSpace(gatewayAPIKey)
+		password = gatewayAPIKey
 	}
 	return Admin{Password: password, SessionTTL: defaultAdminSessionTTL}
 }
