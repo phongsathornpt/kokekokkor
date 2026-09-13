@@ -43,13 +43,30 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		}
 		return nil, err
 	}
-	targets, defaults, modelRoutes := routingInputs(snapshot, cfg)
+	credentials, err := resolveCredentials(context.Background(), cfg, snapshot, catalogStore)
+	if err != nil {
+		if catalogStore != nil {
+			_ = catalogStore.Close()
+		}
+		return nil, err
+	}
+	targets, defaults, modelRoutes := routingInputs(snapshot, credentials.Snapshot())
 	router, err := routing.NewProtocolTable(targets, defaults, modelRoutes)
 	if err != nil {
 		if catalogStore != nil {
 			_ = catalogStore.Close()
 		}
 		return nil, err
+	}
+	if catalogStore != nil {
+		credentials.SetRuntimeApply(func(ctx context.Context, values map[string]string) error {
+			current, err := catalogStore.Load(ctx)
+			if err != nil {
+				return err
+			}
+			nextTargets, nextDefaults, nextRoutes := routingInputs(current, values)
+			return router.ReplaceProtocols(nextTargets, nextDefaults, nextRoutes)
+		})
 	}
 
 	oauth, err := resolveOAuthRuntime(context.Background(), cfg, catalogStore)
@@ -59,7 +76,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		}
 		return nil, err
 	}
-	admin, err := resolveAdminHandler(cfg, snapshot, targets, oauth, catalogStore, router)
+	admin, err := resolveAdminHandler(cfg, snapshot, targets, credentials, oauth, catalogStore, router)
 	if err != nil {
 		if catalogStore != nil {
 			_ = catalogStore.Close()
