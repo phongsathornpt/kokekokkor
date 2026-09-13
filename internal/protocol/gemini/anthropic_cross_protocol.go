@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -84,9 +85,9 @@ func writeAnthropicTranslatedStreamResponse(w http.ResponseWriter, response upst
 		return false, fmt.Errorf("retryable Anthropic upstream status %d", response.StatusCode)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		data, err := readTranslatedStreamError(response.Body)
+		data, err := io.ReadAll(io.LimitReader(response.Body, maxTranslatedStreamErrorBytes))
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("read translated upstream error: %w", err)
 		}
 		if retryAfter := response.Header.Get("Retry-After"); retryAfter != "" {
 			w.Header().Set("Retry-After", retryAfter)
