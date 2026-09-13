@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,16 +15,25 @@ import (
 )
 
 type stubCrossTranslator struct {
-	called bool
-	model  string
-	result upstream.Response
-	err    error
+	called       bool
+	streamCalled bool
+	model        string
+	result       upstream.Response
+	streamResult upstream.StreamResponse
+	err          error
+	streamErr    error
 }
 
 func (s *stubCrossTranslator) OpenAIChatToAnthropic(_ context.Context, _ provider.Target, model string, _ http.Header, _ []byte) (upstream.Response, error) {
 	s.called = true
 	s.model = model
 	return s.result, s.err
+}
+
+func (s *stubCrossTranslator) OpenAIChatToAnthropicStream(_ context.Context, _ provider.Target, model string, _ http.Header, _ []byte) (upstream.StreamResponse, error) {
+	s.streamCalled = true
+	s.model = model
+	return s.streamResult, s.streamErr
 }
 
 func TestHandlerUsesAnthropicTranslator(t *testing.T) {
@@ -51,6 +61,37 @@ func TestHandlerUsesAnthropicTranslator(t *testing.T) {
 	}
 	if len(forwarder.calls) != 0 {
 		t.Fatalf("raw forwarder calls = %#v", forwarder.calls)
+	}
+}
+
+func TestHandlerUsesAnthropicStreamTranslator(t *testing.T) {
+	forwarder := &stubForwarder{fail: map[string]error{}}
+	cross := &stubCrossTranslator{streamResult: upstream.StreamResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader("data: {\"ok\":true}\n\ndata: [DONE]\n\n")),
+	}}
+	handler := NewHandler(stubRouter{plan: routing.Plan{
+		RequestedModel: "portable",
+		Attempts: []routing.Attempt{{
+			Target: provider.Target{ID: "anthropic", Protocol: provider.ProtocolAnthropic},
+			Model:  "claude-upstream",
+		}},
+	}}, forwarder, cross)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"portable","stream":true,"max_tokens":32,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !cross.streamCalled || cross.called {
+		t.Fatalf("status=%d translator=%#v body=%s", rec.Code, cross, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "[DONE]") {
+		t.Fatalf("body = %q", rec.Body.String())
 	}
 }
 
