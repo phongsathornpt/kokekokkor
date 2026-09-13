@@ -15,7 +15,9 @@ import (
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
 	anthropicProvider "github.com/phongsathornpt/kokekokkor/internal/provider/anthropic"
 	"github.com/phongsathornpt/kokekokkor/internal/provider/openaicompat"
+	"github.com/phongsathornpt/kokekokkor/internal/translator"
 	"github.com/phongsathornpt/kokekokkor/internal/transport/httpserver"
+	"github.com/phongsathornpt/kokekokkor/internal/transport/upstreamhttp"
 )
 
 type App struct {
@@ -28,13 +30,26 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	targets := make([]provider.Target, 0, len(cfg.Providers))
+	targets := make([]provider.Target, 0, len(cfg.Providers)+1)
 	for _, configured := range cfg.Providers {
 		targets = append(targets, provider.Target{
-			ID:      configured.ID,
-			BaseURL: configured.BaseURL,
-			APIKey:  configured.APIKey,
+			ID:       configured.ID,
+			Protocol: provider.ProtocolOpenAI,
+			BaseURL:  configured.BaseURL,
+			APIKey:   configured.APIKey,
 		})
+	}
+
+	var anthropicTarget *provider.Target
+	if cfg.Anthropic.BaseURL != "" {
+		target := provider.Target{
+			ID:       cfg.Anthropic.ID,
+			Protocol: provider.ProtocolAnthropic,
+			BaseURL:  cfg.Anthropic.BaseURL,
+			APIKey:   cfg.Anthropic.APIKey,
+		}
+		anthropicTarget = &target
+		targets = append(targets, target)
 	}
 
 	modelRoutes := make(map[string][]routing.RouteTarget, len(cfg.ModelRoutes))
@@ -49,27 +64,28 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		modelRoutes[model] = routeTargets
 	}
 
-	router, err := routing.NewTable(targets, cfg.DefaultProviderID, modelRoutes)
+	defaults := make(map[provider.Protocol]string, 2)
+	if cfg.DefaultProviderID != "" {
+		defaults[provider.ProtocolOpenAI] = cfg.DefaultProviderID
+	}
+	if anthropicTarget != nil {
+		defaults[provider.ProtocolAnthropic] = anthropicTarget.ID
+	}
+	router, err := routing.NewProtocolTable(targets, defaults, modelRoutes)
 	if err != nil {
 		return nil, err
 	}
+
+	bufferedUpstream := upstreamhttp.New(cfg.Anthropic.Version)
+	crossProtocol := translator.New(bufferedUpstream)
+
 	openAIUpstream := openaicompat.New(logger)
-	openAI := openaiProtocol.NewHandler(router, openAIUpstream)
+	openAI := openaiProtocol.NewHandler(router, openAIUpstream, crossProtocol)
 
-	var anthropicTarget *provider.Target
-	if cfg.Anthropic.BaseURL != "" {
-		anthropicTarget = &provider.Target{
-			ID:      cfg.Anthropic.ID,
-			BaseURL: cfg.Anthropic.BaseURL,
-			APIKey:  cfg.Anthropic.APIKey,
-		}
-	}
 	anthropicUpstream := anthropicProvider.New(logger, cfg.Anthropic.Version)
-	anthropicAPI := anthropicProtocol.NewHandler(anthropicTarget, anthropicUpstream)
+	anthropicAPI := anthropicProtocol.NewRoutedHandler(router, anthropicTarget, anthropicUpstream, crossProtocol)
 
-	ready := func() bool { return router.Ready() || anthropicAPI.Ready() }
-	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, ready, openAI, anthropicAPI, logger)
-
+	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, logger)
 	return &App{server: server.HTTP, logger: logger}, nil
 }
 

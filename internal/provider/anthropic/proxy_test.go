@@ -42,8 +42,10 @@ func TestProxyReplacesClientCredentialsAndPreservesAnthropicHeaders(t *testing.T
 	req.Header.Set("Anthropic-Beta", "prompt-caching-2024-07-31")
 	rec := httptest.NewRecorder()
 
-	proxy.ServeHTTPTo(rec, req, provider.Target{ID: "anthropic", BaseURL: upstream.URL, APIKey: "upstream-secret"})
-
+	err := proxy.ServeHTTPTo(rec, req, provider.Target{ID: "anthropic", BaseURL: upstream.URL, APIKey: "upstream-secret"}, false)
+	if err != nil {
+		t.Fatalf("ServeHTTPTo() error = %v", err)
+	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
@@ -67,9 +69,31 @@ func TestProxyAddsDefaultAnthropicVersion(t *testing.T) {
 	proxy := New(slog.New(slog.NewTextHandler(io.Discard, nil)), "2023-06-01")
 	req := httptest.NewRequest(http.MethodPost, "http://gateway/v1/messages/count_tokens", strings.NewReader(`{"model":"claude-test"}`))
 	rec := httptest.NewRecorder()
-	proxy.ServeHTTPTo(rec, req, provider.Target{ID: "anthropic", BaseURL: upstream.URL})
+	if err := proxy.ServeHTTPTo(rec, req, provider.Target{ID: "anthropic", BaseURL: upstream.URL}, false); err != nil {
+		t.Fatalf("ServeHTTPTo() error = %v", err)
+	}
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestProxySuppressesRetryableStatusBeforeFallback(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, "unavailable")
+	}))
+	defer upstream.Close()
+
+	proxy := New(slog.New(slog.NewTextHandler(io.Discard, nil)), "2023-06-01")
+	req := httptest.NewRequest(http.MethodPost, "http://gateway/v1/messages", strings.NewReader(`{"model":"claude-test"}`))
+	rec := httptest.NewRecorder()
+
+	err := proxy.ServeHTTPTo(rec, req, provider.Target{ID: "anthropic", BaseURL: upstream.URL}, true)
+	if err == nil {
+		t.Fatal("ServeHTTPTo() error = nil, want retryable error")
+	}
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("response committed during fallback: status=%d body=%q", rec.Code, rec.Body.String())
 	}
 }
