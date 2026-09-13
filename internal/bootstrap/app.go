@@ -26,16 +26,19 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	var target *provider.Target
-	if cfg.OpenAICompatible.BaseURL != "" {
-		target = &provider.Target{
-			ID:      cfg.OpenAICompatible.ID,
-			BaseURL: cfg.OpenAICompatible.BaseURL,
-			APIKey:  cfg.OpenAICompatible.APIKey,
-		}
+	targets := make([]provider.Target, 0, len(cfg.Providers))
+	for _, configured := range cfg.Providers {
+		targets = append(targets, provider.Target{
+			ID:      configured.ID,
+			BaseURL: configured.BaseURL,
+			APIKey:  configured.APIKey,
+		})
 	}
 
-	router := routing.NewStatic(target)
+	router, err := routing.NewTable(targets, cfg.DefaultProviderID, cfg.ModelRoutes)
+	if err != nil {
+		return nil, err
+	}
 	upstream := openaicompat.New(logger)
 	openAI := openaiProtocol.NewHandler(router, upstream)
 	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, logger)
