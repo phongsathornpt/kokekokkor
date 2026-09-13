@@ -13,14 +13,14 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/security/secretbox"
 )
 
-func resolveCredentials(ctx context.Context, cfg config.Config, snapshot domaincatalog.Snapshot, store *sqlitestore.Store) (map[string]string, error) {
+func resolveCredentials(ctx context.Context, cfg config.Config, snapshot domaincatalog.Snapshot, store *sqlitestore.Store) (*appcredentials.Service, error) {
 	environment := environmentCredentials(cfg)
 	encryption, enabled, err := config.LoadCredentialEncryption()
 	if err != nil {
 		return nil, err
 	}
 	if !enabled {
-		return environment, nil
+		return appcredentials.NewService(nil, environment), nil
 	}
 	if store == nil {
 		return nil, fmt.Errorf("credential encryption requires KOKEKOKKOR_DATABASE_DSN")
@@ -54,7 +54,7 @@ func resolveCredentials(ctx context.Context, cfg config.Config, snapshot domainc
 			return nil, err
 		}
 	}
-	return resolved, nil
+	return appcredentials.NewService(repository, resolved), nil
 }
 
 func environmentCredentials(cfg config.Config) map[string]string {
