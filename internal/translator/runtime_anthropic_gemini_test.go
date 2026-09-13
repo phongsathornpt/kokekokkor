@@ -44,7 +44,7 @@ func TestGeminiGenerateContentToAnthropic(t *testing.T) {
 		Body:       []byte(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-upstream","content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":4,"output_tokens":2}}`),
 	}}
 	runtime := New(client)
-	response, err := runtime.GeminiGenerateContentToAnthropic(context.Background(), provider.Target{ID: "anthropic", Protocol: provider.ProtocolAnthropic}, "claude-upstream", http.Header{}, []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`))
+	response, err := runtime.GeminiGenerateContentToAnthropic(context.Background(), provider.Target{ID: "anthropic", Protocol: provider.ProtocolAnthropic}, "claude-upstream", http.Header{}, []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":32}}`))
 	if err != nil {
 		t.Fatalf("GeminiGenerateContentToAnthropic() error = %v", err)
 	}
