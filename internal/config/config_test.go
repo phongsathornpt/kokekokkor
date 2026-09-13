@@ -2,7 +2,7 @@ package config
 
 import "testing"
 
-func TestLoadProvidersAndModelRoutes(t *testing.T) {
+func TestLoadProvidersAndLegacyModelRoute(t *testing.T) {
 	clearProviderEnv(t)
 	t.Setenv("KOKEKOKKOR_PROVIDERS_JSON", `[{"id":"primary","base_url":"https://api.example.com","api_key":"one"},{"id":"fast","base_url":"https://fast.example.com","api_key":"two"}]`)
 	t.Setenv("KOKEKOKKOR_DEFAULT_PROVIDER_ID", "primary")
@@ -18,8 +18,36 @@ func TestLoadProvidersAndModelRoutes(t *testing.T) {
 	if cfg.DefaultProviderID != "primary" {
 		t.Fatalf("DefaultProviderID = %q, want %q", cfg.DefaultProviderID, "primary")
 	}
-	if got := cfg.ModelRoutes["gpt-fast"]; got != "fast" {
-		t.Fatalf("ModelRoutes[gpt-fast] = %q, want %q", got, "fast")
+	route := cfg.ModelRoutes["gpt-fast"]
+	if len(route) != 1 || route[0].ProviderID != "fast" || route[0].Model != "" {
+		t.Fatalf("ModelRoutes[gpt-fast] = %#v", route)
+	}
+}
+
+func TestLoadAliasAndFallbackModelRoute(t *testing.T) {
+	clearProviderEnv(t)
+	t.Setenv("KOKEKOKKOR_PROVIDERS_JSON", `[{"id":"primary","base_url":"https://api.example.com"},{"id":"backup","base_url":"https://backup.example.com"}]`)
+	t.Setenv("KOKEKOKKOR_MODEL_ROUTES_JSON", `{"smart":[{"provider":"primary","model":"gpt-primary"},{"provider":"backup","model":"gpt-backup"}],"direct":{"provider":"primary","model":"gpt-direct"}}`)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	smart := cfg.ModelRoutes["smart"]
+	if len(smart) != 2 {
+		t.Fatalf("len(ModelRoutes[smart]) = %d, want 2", len(smart))
+	}
+	if smart[0].ProviderID != "primary" || smart[0].Model != "gpt-primary" {
+		t.Fatalf("smart[0] = %#v", smart[0])
+	}
+	if smart[1].ProviderID != "backup" || smart[1].Model != "gpt-backup" {
+		t.Fatalf("smart[1] = %#v", smart[1])
+	}
+
+	direct := cfg.ModelRoutes["direct"]
+	if len(direct) != 1 || direct[0].ProviderID != "primary" || direct[0].Model != "gpt-direct" {
+		t.Fatalf("ModelRoutes[direct] = %#v", direct)
 	}
 }
 
@@ -47,7 +75,17 @@ func TestLoadLegacySingleProvider(t *testing.T) {
 func TestLoadRejectsUnknownRouteProvider(t *testing.T) {
 	clearProviderEnv(t)
 	t.Setenv("KOKEKOKKOR_PROVIDERS_JSON", `[{"id":"primary","base_url":"https://api.example.com"}]`)
-	t.Setenv("KOKEKOKKOR_MODEL_ROUTES_JSON", `{"gpt-fast":"missing"}`)
+	t.Setenv("KOKEKOKKOR_MODEL_ROUTES_JSON", `{"smart":[{"provider":"missing","model":"x"}]}`)
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want validation error")
+	}
+}
+
+func TestLoadRejectsEmptyFallbackRoute(t *testing.T) {
+	clearProviderEnv(t)
+	t.Setenv("KOKEKOKKOR_PROVIDERS_JSON", `[{"id":"primary","base_url":"https://api.example.com"}]`)
+	t.Setenv("KOKEKOKKOR_MODEL_ROUTES_JSON", `{"smart":[]}`)
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() error = nil, want validation error")

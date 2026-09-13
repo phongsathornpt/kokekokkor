@@ -13,7 +13,7 @@ type Config struct {
 	GatewayAPIKey     string
 	Providers         []OpenAICompatible
 	DefaultProviderID string
-	ModelRoutes       map[string]string
+	ModelRoutes       map[string][]ModelRouteTarget
 }
 
 type HTTP struct {
@@ -26,12 +26,17 @@ type OpenAICompatible struct {
 	APIKey  string `json:"api_key"`
 }
 
+type ModelRouteTarget struct {
+	ProviderID string `json:"provider"`
+	Model      string `json:"model,omitempty"`
+}
+
 func Load() (Config, error) {
 	cfg := Config{
 		HTTP:              HTTP{Addr: envOr("KOKEKOKKOR_ADDR", ":8080")},
 		GatewayAPIKey:     os.Getenv("KOKEKOKKOR_API_KEY"),
 		DefaultProviderID: os.Getenv("KOKEKOKKOR_DEFAULT_PROVIDER_ID"),
-		ModelRoutes:       make(map[string]string),
+		ModelRoutes:       make(map[string][]ModelRouteTarget),
 	}
 
 	if raw := os.Getenv("KOKEKOKKOR_PROVIDERS_JSON"); raw != "" {
@@ -51,9 +56,11 @@ func Load() (Config, error) {
 	}
 
 	if raw := os.Getenv("KOKEKOKKOR_MODEL_ROUTES_JSON"); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &cfg.ModelRoutes); err != nil {
+		routes, err := parseModelRoutes(raw)
+		if err != nil {
 			return Config{}, fmt.Errorf("parse KOKEKOKKOR_MODEL_ROUTES_JSON: %w", err)
 		}
+		cfg.ModelRoutes = routes
 	}
 
 	if cfg.DefaultProviderID == "" && len(cfg.Providers) == 1 {
@@ -90,15 +97,59 @@ func (c Config) Validate() error {
 		}
 	}
 
-	for model, providerID := range c.ModelRoutes {
+	for model, route := range c.ModelRoutes {
 		if strings.TrimSpace(model) == "" {
 			return fmt.Errorf("model route name must not be empty")
 		}
-		if _, ok := providers[providerID]; !ok {
-			return fmt.Errorf("model route %q references unknown provider %q", model, providerID)
+		if len(route) == 0 {
+			return fmt.Errorf("model route %q must have at least one target", model)
+		}
+		for _, target := range route {
+			if _, ok := providers[target.ProviderID]; !ok {
+				return fmt.Errorf("model route %q references unknown provider %q", model, target.ProviderID)
+			}
 		}
 	}
 	return nil
+}
+
+func parseModelRoutes(raw string) (map[string][]ModelRouteTarget, error) {
+	var encoded map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &encoded); err != nil {
+		return nil, err
+	}
+
+	routes := make(map[string][]ModelRouteTarget, len(encoded))
+	for model, value := range encoded {
+		trimmed := strings.TrimSpace(string(value))
+		if trimmed == "" {
+			return nil, fmt.Errorf("model route %q has an empty value", model)
+		}
+
+		switch trimmed[0] {
+		case '"':
+			var providerID string
+			if err := json.Unmarshal(value, &providerID); err != nil {
+				return nil, fmt.Errorf("model route %q: %w", model, err)
+			}
+			routes[model] = []ModelRouteTarget{{ProviderID: providerID}}
+		case '{':
+			var target ModelRouteTarget
+			if err := json.Unmarshal(value, &target); err != nil {
+				return nil, fmt.Errorf("model route %q: %w", model, err)
+			}
+			routes[model] = []ModelRouteTarget{target}
+		case '[':
+			var targets []ModelRouteTarget
+			if err := json.Unmarshal(value, &targets); err != nil {
+				return nil, fmt.Errorf("model route %q: %w", model, err)
+			}
+			routes[model] = targets
+		default:
+			return nil, fmt.Errorf("model route %q must be a provider string, target object, or target array", model)
+		}
+	}
+	return routes, nil
 }
 
 func validateBaseURL(raw string) error {
