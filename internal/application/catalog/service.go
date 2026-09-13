@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
+	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 )
 
 type RuntimeApply func(domaincatalog.Snapshot) error
@@ -55,20 +56,14 @@ func (s *Service) Update(ctx context.Context, mutate func(*domaincatalog.Snapsho
 func cloneSnapshot(source domaincatalog.Snapshot) domaincatalog.Snapshot {
 	cloned := domaincatalog.Snapshot{
 		Providers: append([]domaincatalog.Provider(nil), source.Providers...),
-		Defaults:  make(map[stringAlias]string, len(source.Defaults)),
+		Defaults:  make(map[provider.Protocol]string, len(source.Defaults)),
 		Routes:    make(map[string][]domaincatalog.RouteTarget, len(source.Routes)),
 	}
 	for protocolName, providerID := range source.Defaults {
-		cloned.Defaults[stringAlias(protocolName)] = providerID
+		cloned.Defaults[protocolName] = providerID
 	}
 	for model, targets := range source.Routes {
 		cloned.Routes[model] = append([]domaincatalog.RouteTarget(nil), targets...)
 	}
-	return normalizeDefaults(cloned)
-}
-
-type stringAlias = interface{}
-
-func normalizeDefaults(snapshot domaincatalog.Snapshot) domaincatalog.Snapshot {
-	return snapshot
+	return cloned
 }
