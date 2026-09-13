@@ -38,12 +38,17 @@ func (f *fakeTokens) Delete(_ context.Context, providerID string) error {
 }
 
 type fakeCredentials struct {
-	values   map[string]string
-	editable bool
+	values    map[string]string
+	editable  bool
+	forgotten string
 }
 
 func (f *fakeCredentials) HasAPIKey(providerID string) bool { return f.values[providerID] != "" }
 func (f *fakeCredentials) Editable() bool                   { return f.editable }
+func (f *fakeCredentials) ForgetProvider(providerID string) {
+	delete(f.values, providerID)
+	f.forgotten = providerID
+}
 func (f *fakeCredentials) SetAPIKey(_ context.Context, providerID, value string) error {
 	if !f.editable {
 		return errors.New("read only")
@@ -56,6 +61,59 @@ func (f *fakeCredentials) DeleteAPIKey(_ context.Context, providerID string) err
 		return errors.New("read only")
 	}
 	delete(f.values, providerID)
+	return nil
+}
+
+type fakeCatalog struct {
+	snapshot domaincatalog.Snapshot
+}
+
+func (f *fakeCatalog) Load(context.Context) (domaincatalog.Snapshot, error) { return f.snapshot, nil }
+func (f *fakeCatalog) CreateProvider(_ context.Context, item domaincatalog.Provider) error {
+	f.snapshot.Providers = append(f.snapshot.Providers, item)
+	return nil
+}
+func (f *fakeCatalog) UpdateProvider(_ context.Context, providerID string, item domaincatalog.Provider) error {
+	for i := range f.snapshot.Providers {
+		if f.snapshot.Providers[i].ID == providerID {
+			f.snapshot.Providers[i] = item
+			return nil
+		}
+	}
+	return errors.New("missing provider")
+}
+func (f *fakeCatalog) DeleteProvider(_ context.Context, providerID string) error {
+	for i := range f.snapshot.Providers {
+		if f.snapshot.Providers[i].ID == providerID {
+			f.snapshot.Providers = append(f.snapshot.Providers[:i], f.snapshot.Providers[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New("missing provider")
+}
+func (f *fakeCatalog) SetProviderEnabled(_ context.Context, providerID string, enabled bool) error {
+	for i := range f.snapshot.Providers {
+		if f.snapshot.Providers[i].ID == providerID {
+			f.snapshot.Providers[i].Enabled = enabled
+			return nil
+		}
+	}
+	return errors.New("missing provider")
+}
+func (f *fakeCatalog) SetDefault(_ context.Context, protocolName provider.Protocol, providerID string) error {
+	if providerID == "" {
+		delete(f.snapshot.Defaults, protocolName)
+	} else {
+		f.snapshot.Defaults[protocolName] = providerID
+	}
+	return nil
+}
+func (f *fakeCatalog) SetRoute(_ context.Context, model string, targets []domaincatalog.RouteTarget) error {
+	f.snapshot.Routes[model] = targets
+	return nil
+}
+func (f *fakeCatalog) DeleteRoute(_ context.Context, model string) error {
+	delete(f.snapshot.Routes, model)
 	return nil
 }
 
@@ -143,5 +201,81 @@ func TestAdminUpdatesAndDeletesEncryptedAPIKey(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent || credentials.HasAPIKey("gemini") {
 		t.Fatalf("delete status=%d values=%#v", rec.Code, credentials.values)
+	}
+}
+
+func TestAdminProviderCRUDAndCredentialForget(t *testing.T) {
+	catalog := &fakeCatalog{snapshot: domaincatalog.Snapshot{
+		Providers: []domaincatalog.Provider{},
+		Defaults:  map[provider.Protocol]string{},
+		Routes:    map[string][]domaincatalog.RouteTarget{},
+	}}
+	credentials := &fakeCredentials{values: map[string]string{"custom": "stale"}, editable: true}
+	handler, err := NewManageable(catalog.snapshot, catalog, credentials, nil, nil)
+	if err != nil {
+		t.Fatalf("NewManageable() error = %v", err)
+	}
+
+	form := url.Values{
+		"provider_id": {"custom"},
+		"protocol":    {"openai"},
+		"base_url":    {"https://one.example/v1"},
+		"enabled":     {"true"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/admin/providers", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || len(catalog.snapshot.Providers) != 1 {
+		t.Fatalf("create status=%d providers=%#v", rec.Code, catalog.snapshot.Providers)
+	}
+
+	form.Set("protocol", "anthropic")
+	form.Set("base_url", "https://api.anthropic.com")
+	form.Set("enabled", "false")
+	req = httptest.NewRequest(http.MethodPost, "/admin/providers/update", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	got := catalog.snapshot.Providers[0]
+	if rec.Code != http.StatusNoContent || got.Protocol != provider.ProtocolAnthropic || got.BaseURL != "https://api.anthropic.com" || got.Enabled {
+		t.Fatalf("update status=%d provider=%#v", rec.Code, got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	for _, want := range []string{"Add provider", "Save provider", "Delete provider"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("admin body missing %q", want)
+		}
+	}
+
+	form = url.Values{"provider_id": {"custom"}}
+	req = httptest.NewRequest(http.MethodPost, "/admin/providers/delete", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || len(catalog.snapshot.Providers) != 0 {
+		t.Fatalf("delete status=%d providers=%#v", rec.Code, catalog.snapshot.Providers)
+	}
+	if credentials.forgotten != "custom" || credentials.HasAPIKey("custom") {
+		t.Fatalf("credential forget failed: forgotten=%q values=%#v", credentials.forgotten, credentials.values)
+	}
+}
+
+func TestAdminProviderRejectsInvalidProtocol(t *testing.T) {
+	catalog := &fakeCatalog{snapshot: domaincatalog.Snapshot{Defaults: map[provider.Protocol]string{}, Routes: map[string][]domaincatalog.RouteTarget{}}}
+	handler, err := NewManageable(catalog.snapshot, catalog, &fakeCredentials{values: map[string]string{}}, nil, nil)
+	if err != nil {
+		t.Fatalf("NewManageable() error = %v", err)
+	}
+	form := url.Values{"provider_id": {"bad"}, "protocol": {"wat"}, "base_url": {"https://example.com"}, "enabled": {"true"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/providers", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
 	}
 }
