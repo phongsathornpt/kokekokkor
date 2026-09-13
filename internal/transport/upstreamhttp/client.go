@@ -38,29 +38,13 @@ func New(defaultAnthropicVersion string) *Client {
 }
 
 func (c *Client) Do(ctx context.Context, target provider.Target, request upstream.Request) (upstream.Response, error) {
-	base, err := url.Parse(target.BaseURL)
+	stream, err := c.Stream(ctx, target, request)
 	if err != nil {
-		return upstream.Response{}, fmt.Errorf("parse upstream %q URL: %w", target.ID, err)
+		return upstream.Response{}, err
 	}
-	endpoint := joinURL(base, request.Path, request.RawQuery)
+	defer stream.Body.Close()
 
-	req, err := http.NewRequestWithContext(ctx, request.Method, endpoint.String(), bytes.NewReader(request.Body))
-	if err != nil {
-		return upstream.Response{}, fmt.Errorf("create upstream request: %w", err)
-	}
-	copySafeHeaders(req.Header, request.Header)
-	if req.Header.Get("Content-Type") == "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	applyCredentials(req.Header, target, c.defaultAnthropicVersion)
-
-	response, err := c.httpClient.Do(req)
-	if err != nil {
-		return upstream.Response{}, fmt.Errorf("execute upstream request: %w", err)
-	}
-	defer response.Body.Close()
-
-	limited := io.LimitReader(response.Body, maxResponseBodyBytes+1)
+	limited := io.LimitReader(stream.Body, maxResponseBodyBytes+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
 		return upstream.Response{}, fmt.Errorf("read upstream response: %w", err)
@@ -70,9 +54,37 @@ func (c *Client) Do(ctx context.Context, target provider.Target, request upstrea
 	}
 
 	return upstream.Response{
+		StatusCode: stream.StatusCode,
+		Header:     stream.Header,
+		Body:       body,
+	}, nil
+}
+
+func (c *Client) Stream(ctx context.Context, target provider.Target, request upstream.Request) (upstream.StreamResponse, error) {
+	base, err := url.Parse(target.BaseURL)
+	if err != nil {
+		return upstream.StreamResponse{}, fmt.Errorf("parse upstream %q URL: %w", target.ID, err)
+	}
+	endpoint := joinURL(base, request.Path, request.RawQuery)
+
+	req, err := http.NewRequestWithContext(ctx, request.Method, endpoint.String(), bytes.NewReader(request.Body))
+	if err != nil {
+		return upstream.StreamResponse{}, fmt.Errorf("create upstream request: %w", err)
+	}
+	copySafeHeaders(req.Header, request.Header)
+	if req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	applyCredentials(req.Header, target, c.defaultAnthropicVersion)
+
+	response, err := c.httpClient.Do(req)
+	if err != nil {
+		return upstream.StreamResponse{}, fmt.Errorf("execute upstream request: %w", err)
+	}
+	return upstream.StreamResponse{
 		StatusCode: response.StatusCode,
 		Header:     response.Header.Clone(),
-		Body:       body,
+		Body:       response.Body,
 	}, nil
 }
 
