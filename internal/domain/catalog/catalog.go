@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
@@ -36,8 +37,8 @@ func (s Snapshot) Validate() error {
 		default:
 			return fmt.Errorf("provider %q uses unsupported protocol %q", item.ID, item.Protocol)
 		}
-		if strings.TrimSpace(item.BaseURL) == "" {
-			return fmt.Errorf("provider %q base URL must not be empty", item.ID)
+		if err := validateBaseURL(item.BaseURL); err != nil {
+			return fmt.Errorf("provider %q: %w", item.ID, err)
 		}
 		if _, exists := providers[item.ID]; exists {
 			return fmt.Errorf("duplicate provider ID %q", item.ID)
@@ -77,6 +78,23 @@ func (s Snapshot) Validate() error {
 				return fmt.Errorf("route %q references disabled provider %q", model, target.ProviderID)
 			}
 		}
+	}
+	return nil
+}
+
+func validateBaseURL(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return fmt.Errorf("base URL must not be empty")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("parse base URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("base URL must use http or https")
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("base URL must include a host")
 	}
 	return nil
 }
