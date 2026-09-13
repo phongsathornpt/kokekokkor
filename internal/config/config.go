@@ -11,6 +11,7 @@ import (
 type Config struct {
 	HTTP              HTTP
 	GatewayAPIKey     string
+	DatabaseDSN       string
 	Providers         []OpenAICompatible
 	DefaultProviderID string
 	ModelRoutes       map[string][]ModelRouteTarget
@@ -50,6 +51,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		HTTP:              HTTP{Addr: envOr("KOKEKOKKOR_ADDR", ":8080")},
 		GatewayAPIKey:     os.Getenv("KOKEKOKKOR_API_KEY"),
+		DatabaseDSN:       os.Getenv("KOKEKOKKOR_DATABASE_DSN"),
 		DefaultProviderID: os.Getenv("KOKEKOKKOR_DEFAULT_PROVIDER_ID"),
 		ModelRoutes:       make(map[string][]ModelRouteTarget),
 		Anthropic: Anthropic{
