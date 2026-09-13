@@ -40,11 +40,11 @@ func (m *memoryTokens) Get(_ context.Context, providerID string) (domainoauth.To
 
 func testProvider() domainoauth.Provider {
 	return domainoauth.Provider{
-		ID:               "provider-a",
-		AuthorizationURL: "https://auth.example.com/authorize",
-		TokenURL:         "https://auth.example.com/token",
-		ClientID:         "client-id",
-		Scopes:           []string{"scope:a", "scope:b"},
+		ID:                  "provider-a",
+		AuthorizationURL:    "https://auth.example.com/authorize",
+		TokenURL:            "https://auth.example.com/token",
+		ClientID:            "client-id",
+		Scopes:              []string{"scope:a", "scope:b"},
 		AuthorizationParams: map[string]string{"access_type": "offline"},
 	}
 }
