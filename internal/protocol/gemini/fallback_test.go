@@ -15,7 +15,9 @@ import (
 
 type fallbackRouter struct{ plan routing.Plan }
 
-func (r fallbackRouter) Resolve(context.Context, routing.Request) (routing.Plan, error) { return r.plan, nil }
+func (r fallbackRouter) Resolve(context.Context, routing.Request) (routing.Plan, error) {
+	return r.plan, nil
+}
 
 type fallbackForwarder struct {
 	calls  int
