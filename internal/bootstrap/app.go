@@ -11,7 +11,9 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
 	"github.com/phongsathornpt/kokekokkor/internal/config"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	anthropicProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/anthropic"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
+	anthropicProvider "github.com/phongsathornpt/kokekokkor/internal/provider/anthropic"
 	"github.com/phongsathornpt/kokekokkor/internal/provider/openaicompat"
 	"github.com/phongsathornpt/kokekokkor/internal/transport/httpserver"
 )
@@ -51,9 +53,22 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	upstream := openaicompat.New(logger)
-	openAI := openaiProtocol.NewHandler(router, upstream)
-	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, logger)
+	openAIUpstream := openaicompat.New(logger)
+	openAI := openaiProtocol.NewHandler(router, openAIUpstream)
+
+	var anthropicTarget *provider.Target
+	if cfg.Anthropic.BaseURL != "" {
+		anthropicTarget = &provider.Target{
+			ID:      cfg.Anthropic.ID,
+			BaseURL: cfg.Anthropic.BaseURL,
+			APIKey:  cfg.Anthropic.APIKey,
+		}
+	}
+	anthropicUpstream := anthropicProvider.New(logger, cfg.Anthropic.Version)
+	anthropicAPI := anthropicProtocol.NewHandler(anthropicTarget, anthropicUpstream)
+
+	ready := func() bool { return router.Ready() || anthropicAPI.Ready() }
+	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, ready, openAI, anthropicAPI, logger)
 
 	return &App{server: server.HTTP, logger: logger}, nil
 }
