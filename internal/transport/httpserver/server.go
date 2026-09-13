@@ -33,10 +33,8 @@ func NewWithAdmin(addr, gatewayAPIKey string, ready func() bool, openAI, anthrop
 		mux.Handle("GET /oauth/{provider}/callback", oauth)
 	}
 	if admin != nil {
-		protected := bearerAuth(gatewayAPIKey, admin)
-		mux.Handle("GET /admin", protected)
-		mux.Handle("GET /admin/", protected)
-		mux.Handle("DELETE /admin/oauth/{provider}", protected)
+		mux.Handle("/admin", admin)
+		mux.Handle("/admin/", admin)
 	}
 	mux.Handle("POST /v1/messages", anthropicAPIKeyAuth(gatewayAPIKey, anthropic))
 	mux.Handle("POST /v1/messages/count_tokens", anthropicAPIKeyAuth(gatewayAPIKey, anthropic))
