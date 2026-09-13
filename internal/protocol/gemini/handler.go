@@ -22,9 +22,10 @@ type Forwarder interface {
 }
 
 type Handler struct {
-	target    *provider.Target
-	router    routing.Router
-	forwarder Forwarder
+	target     *provider.Target
+	router     routing.Router
+	forwarder  Forwarder
+	translator CrossProtocolTranslator
 }
 
 // NewHandler preserves a simple single-native-upstream constructor for tests
@@ -33,8 +34,12 @@ func NewHandler(target *provider.Target, forwarder Forwarder) *Handler {
 	return &Handler{target: target, forwarder: forwarder}
 }
 
-func NewRoutedHandler(router routing.Router, target *provider.Target, forwarder Forwarder) *Handler {
-	return &Handler{target: target, router: router, forwarder: forwarder}
+func NewRoutedHandler(router routing.Router, target *provider.Target, forwarder Forwarder, translators ...CrossProtocolTranslator) *Handler {
+	handler := &Handler{target: target, router: router, forwarder: forwarder}
+	if len(translators) != 0 {
+		handler.translator = translators[0]
+	}
+	return handler
 }
 
 func (h *Handler) Ready() bool {
@@ -91,30 +96,37 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var lastErr error
 	for i, attempt := range plan.Attempts {
 		allowFallback := i < len(plan.Attempts)-1
-		if attempt.Target.EffectiveProtocol() != provider.ProtocolGemini {
-			lastErr = fmt.Errorf("Gemini cross-protocol translation to %q is not implemented", attempt.Target.EffectiveProtocol())
-			if allowFallback {
+		switch attempt.Target.EffectiveProtocol() {
+		case provider.ProtocolGemini:
+			attemptRequest := cloneWithBody(r, body)
+			if attempt.Model != model {
+				path, rewriteErr := rewriteModelPath(r.URL.Path, attempt.Model)
+				if rewriteErr != nil {
+					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", rewriteErr.Error())
+					return
+				}
+				attemptRequest.URL.Path = path
+				attemptRequest.URL.RawPath = ""
+			}
+			if err := h.forwarder.ServeHTTPTo(w, attemptRequest, attempt.Target, allowFallback); err != nil {
+				lastErr = err
 				continue
 			}
-			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", lastErr.Error())
 			return
-		}
 
-		attemptRequest := cloneWithBody(r, body)
-		if attempt.Model != model {
-			path, rewriteErr := rewriteModelPath(r.URL.Path, attempt.Model)
-			if rewriteErr != nil {
-				writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", rewriteErr.Error())
+		case provider.ProtocolOpenAI:
+			done, attemptErr := h.serveOpenAIAttempt(w, r, body, attempt, allowFallback)
+			if done {
 				return
 			}
-			attemptRequest.URL.Path = path
-			attemptRequest.URL.RawPath = ""
+			if attemptErr != nil {
+				lastErr = attemptErr
+				continue
+			}
+
+		default:
+			lastErr = fmt.Errorf("unsupported upstream protocol %q", attempt.Target.Protocol)
 		}
-		if err := h.forwarder.ServeHTTPTo(w, attemptRequest, attempt.Target, allowFallback); err != nil {
-			lastErr = err
-			continue
-		}
-		return
 	}
 
 	if lastErr == nil {
