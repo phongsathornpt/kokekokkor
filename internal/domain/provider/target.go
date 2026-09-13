@@ -6,6 +6,7 @@ type Protocol string
 const (
 	ProtocolOpenAI    Protocol = "openai"
 	ProtocolAnthropic Protocol = "anthropic"
+	ProtocolGemini    Protocol = "gemini"
 )
 
 // Target is an immutable routing result. Credentials are intentionally kept out
