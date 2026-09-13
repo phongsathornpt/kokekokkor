@@ -7,6 +7,7 @@ import (
 
 	appoauth "github.com/phongsathornpt/kokekokkor/internal/application/oauth"
 	"github.com/phongsathornpt/kokekokkor/internal/config"
+	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
 	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/persistence/sqlite"
 	provideroauth "github.com/phongsathornpt/kokekokkor/internal/provider/oauth"
 	"github.com/phongsathornpt/kokekokkor/internal/security/secretbox"
@@ -47,5 +48,5 @@ func resolveOAuthHandler(ctx context.Context, cfg config.Config, store *sqlitest
 	if err != nil {
 		return nil, err
 	}
-	return oauthhttp.New(service, map[string]oauth.Provider{profile.ID: profile}, oauthConfig.PublicBaseURL)
+	return oauthhttp.New(service, map[string]domainoauth.Provider{profile.ID: profile}, oauthConfig.PublicBaseURL)
 }
