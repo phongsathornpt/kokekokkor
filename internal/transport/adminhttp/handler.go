@@ -9,10 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	appcredentials "github.com/phongsathornpt/kokekokkor/internal/application/credentials"
+	appoauth "github.com/phongsathornpt/kokekokkor/internal/application/oauth"
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
-	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 )
 
 type TokenStore interface {
@@ -88,9 +87,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if err := h.template.Execute(w, data); err != nil {
-		return
-	}
+	_ = h.template.Execute(w, data)
 }
 
 func (h *Handler) disconnect(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +100,7 @@ func (h *Handler) disconnect(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := h.tokens.Delete(r.Context(), providerID); err != nil && !errors.Is(err, appcredentials.ErrNotFound) {
+	if err := h.tokens.Delete(r.Context(), providerID); err != nil && !errors.Is(err, appoauth.ErrTokenNotFound) {
 		http.Error(w, "disconnect failed", http.StatusInternalServerError)
 		return
 	}
@@ -125,7 +122,7 @@ func (h *Handler) view(ctx context.Context) (pageData, error) {
 			switch {
 			case err == nil:
 				connected = true
-			case errors.Is(err, appcredentials.ErrNotFound):
+			case errors.Is(err, appoauth.ErrTokenNotFound):
 			default:
 				return pageData{}, err
 			}
@@ -154,8 +151,6 @@ func (h *Handler) view(ctx context.Context) (pageData, error) {
 	sort.Slice(data.Routes, func(i, j int) bool { return data.Routes[i].Model < data.Routes[j].Model })
 	return data, nil
 }
-
-var _ = provider.ProtocolOpenAI
 
 const adminTemplate = `<!doctype html>
 <html lang="en">
