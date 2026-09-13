@@ -28,8 +28,6 @@ type Handler struct {
 	translator CrossProtocolTranslator
 }
 
-// NewHandler preserves a simple single-native-upstream constructor for tests
-// and embedders that do not need model-aware routing.
 func NewHandler(target *provider.Target, forwarder Forwarder) *Handler {
 	return &Handler{target: target, forwarder: forwarder}
 }
@@ -42,29 +40,19 @@ func NewRoutedHandler(router routing.Router, target *provider.Target, forwarder 
 	return handler
 }
 
-func (h *Handler) Ready() bool {
-	return h.target != nil || h.router != nil
-}
+func (h *Handler) Ready() bool { return h.target != nil || h.router != nil }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.router == nil {
 		h.serveLegacy(w, r)
 		return
 	}
-
 	model := requestModel(r.URL.Path)
-	plan, err := h.router.Resolve(r.Context(), routing.Request{
-		Protocol:  provider.ProtocolGemini,
-		Operation: r.URL.Path,
-		Model:     model,
-	})
+	plan, err := h.router.Resolve(r.Context(), routing.Request{Protocol: provider.ProtocolGemini, Operation: r.URL.Path, Model: model})
 	if err != nil {
-		status := http.StatusBadGateway
-		googleStatus := "UNAVAILABLE"
-		message := err.Error()
+		status, googleStatus, message := http.StatusBadGateway, "UNAVAILABLE", err.Error()
 		if errors.Is(err, routing.ErrNoRoute) {
-			status = http.StatusServiceUnavailable
-			message = "no Gemini route configured"
+			status, message = http.StatusServiceUnavailable, "no Gemini route configured"
 		}
 		writeError(w, status, googleStatus, message)
 		return
@@ -73,16 +61,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE", "no Gemini route configured")
 		return
 	}
-
-	if len(plan.Attempts) == 1 &&
-		plan.Attempts[0].Target.EffectiveProtocol() == provider.ProtocolGemini &&
-		plan.Attempts[0].Model == model {
+	if len(plan.Attempts) == 1 && plan.Attempts[0].Target.EffectiveProtocol() == provider.ProtocolGemini && plan.Attempts[0].Model == model {
 		if err := h.forwarder.ServeHTTPTo(w, r, plan.Attempts[0].Target, false); err != nil {
 			writeError(w, http.StatusBadGateway, "UNAVAILABLE", err.Error())
 		}
 		return
 	}
-
 	body, err := replayBody(r)
 	if err != nil {
 		if errors.Is(err, errReplayBodyTooLarge) {
@@ -92,7 +76,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
-
 	var lastErr error
 	for i, attempt := range plan.Attempts {
 		allowFallback := i < len(plan.Attempts)-1
@@ -105,15 +88,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", rewriteErr.Error())
 					return
 				}
-				attemptRequest.URL.Path = path
-				attemptRequest.URL.RawPath = ""
+				attemptRequest.URL.Path, attemptRequest.URL.RawPath = path, ""
 			}
 			if err := h.forwarder.ServeHTTPTo(w, attemptRequest, attempt.Target, allowFallback); err != nil {
 				lastErr = err
 				continue
 			}
 			return
-
 		case provider.ProtocolOpenAI:
 			done, attemptErr := h.serveOpenAIAttempt(w, r, body, attempt, allowFallback)
 			if done {
@@ -123,12 +104,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				lastErr = attemptErr
 				continue
 			}
-
+		case provider.ProtocolAnthropic:
+			done, attemptErr := h.serveAnthropicAttempt(w, r, body, attempt, allowFallback)
+			if done {
+				return
+			}
+			if attemptErr != nil {
+				lastErr = attemptErr
+				continue
+			}
 		default:
 			lastErr = fmt.Errorf("unsupported upstream protocol %q", attempt.Target.Protocol)
 		}
 	}
-
 	if lastErr == nil {
 		lastErr = errors.New("all upstream attempts failed")
 	}
@@ -209,20 +197,12 @@ func cloneWithBody(r *http.Request, body []byte) *http.Request {
 	}
 	clone.Body = io.NopCloser(bytes.NewReader(body))
 	clone.ContentLength = int64(len(body))
-	clone.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(body)), nil
-	}
+	clone.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
 	return clone
 }
 
 func writeError(w http.ResponseWriter, status int, googleStatus, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]any{
-			"code":    status,
-			"message": message,
-			"status":  googleStatus,
-		},
-	})
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": status, "message": message, "status": googleStatus}})
 }
