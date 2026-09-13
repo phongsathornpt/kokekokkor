@@ -37,6 +37,11 @@ func (s *Service) Begin(ctx context.Context, provider domainoauth.Provider, redi
 	if err := validateRedirectURI(redirectURI); err != nil {
 		return domainoauth.Authorization{}, err
 	}
+	for key := range provider.AuthorizationParams {
+		if isReservedAuthorizationParam(key) {
+			return domainoauth.Authorization{}, fmt.Errorf("OAuth authorization parameter %q is reserved", key)
+		}
+	}
 	if s.states == nil {
 		return domainoauth.Authorization{}, fmt.Errorf("OAuth state repository is not configured")
 	}
@@ -76,9 +81,6 @@ func (s *Service) Begin(ctx context.Context, provider domainoauth.Provider, redi
 		query.Set("scope", strings.Join(provider.Scopes, " "))
 	}
 	for key, value := range provider.AuthorizationParams {
-		if isReservedAuthorizationParam(key) {
-			return domainoauth.Authorization{}, fmt.Errorf("OAuth authorization parameter %q is reserved", key)
-		}
 		query.Set(key, value)
 	}
 	authorizationURL.RawQuery = query.Encode()
