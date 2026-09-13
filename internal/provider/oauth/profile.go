@@ -49,7 +49,7 @@ func GeminiProfile(options ProfileOptions) (domainoauth.Provider, error) {
 		AuthorizationParams: map[string]string{
 			"access_type":            "offline",
 			"include_granted_scopes": "true",
-			"prompt":                  "consent",
+			"prompt":                 "consent",
 		},
 	}
 	if value := strings.TrimSpace(options.ProviderID); value != "" {
