@@ -91,23 +91,46 @@ func (c Config) Validate() error {
 		return fmt.Errorf("http address must not be empty")
 	}
 
-	providers := make(map[string]struct{}, len(c.Providers))
+	providers := make(map[string]string, len(c.Providers)+1)
 	for _, configured := range c.Providers {
 		if strings.TrimSpace(configured.ID) == "" {
 			return fmt.Errorf("provider ID must not be empty")
 		}
-		if _, exists := providers[configured.ID]; exists {
-			return fmt.Errorf("duplicate provider ID %q", configured.ID)
+		if previous, exists := providers[configured.ID]; exists {
+			return fmt.Errorf("duplicate provider ID %q already used by %s", configured.ID, previous)
 		}
 		if err := validateBaseURL(configured.BaseURL); err != nil {
 			return fmt.Errorf("provider %q: %w", configured.ID, err)
 		}
-		providers[configured.ID] = struct{}{}
+		providers[configured.ID] = "OpenAI-compatible provider"
+	}
+
+	if c.Anthropic.BaseURL != "" {
+		if strings.TrimSpace(c.Anthropic.ID) == "" {
+			return fmt.Errorf("Anthropic provider ID must not be empty")
+		}
+		if previous, exists := providers[c.Anthropic.ID]; exists {
+			return fmt.Errorf("duplicate provider ID %q already used by %s", c.Anthropic.ID, previous)
+		}
+		if strings.TrimSpace(c.Anthropic.Version) == "" {
+			return fmt.Errorf("Anthropic version must not be empty")
+		}
+		if err := validateBaseURL(c.Anthropic.BaseURL); err != nil {
+			return fmt.Errorf("Anthropic provider %q: %w", c.Anthropic.ID, err)
+		}
+		providers[c.Anthropic.ID] = "Anthropic provider"
 	}
 
 	if c.DefaultProviderID != "" {
-		if _, ok := providers[c.DefaultProviderID]; !ok {
-			return fmt.Errorf("default provider %q is not configured", c.DefaultProviderID)
+		found := false
+		for _, configured := range c.Providers {
+			if configured.ID == c.DefaultProviderID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("default provider %q is not a configured OpenAI-compatible provider", c.DefaultProviderID)
 		}
 	}
 
@@ -122,18 +145,6 @@ func (c Config) Validate() error {
 			if _, ok := providers[target.ProviderID]; !ok {
 				return fmt.Errorf("model route %q references unknown provider %q", model, target.ProviderID)
 			}
-		}
-	}
-
-	if c.Anthropic.BaseURL != "" {
-		if strings.TrimSpace(c.Anthropic.ID) == "" {
-			return fmt.Errorf("Anthropic provider ID must not be empty")
-		}
-		if strings.TrimSpace(c.Anthropic.Version) == "" {
-			return fmt.Errorf("Anthropic version must not be empty")
-		}
-		if err := validateBaseURL(c.Anthropic.BaseURL); err != nil {
-			return fmt.Errorf("Anthropic provider %q: %w", c.Anthropic.ID, err)
 		}
 	}
 	return nil
