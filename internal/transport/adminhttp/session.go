@@ -32,7 +32,7 @@ type SessionAuth struct {
 
 func NewSessionAuth(password string, ttl time.Duration, next http.Handler) *SessionAuth {
 	return &SessionAuth{
-		password: strings.TrimSpace(password),
+		password: password,
 		ttl:      ttl,
 		next:     next,
 		now:      time.Now,
