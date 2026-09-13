@@ -17,6 +17,8 @@ import (
 type oauthRuntime struct {
 	handler      http.Handler
 	bearerTokens *appoauth.RuntimeTokenResolver
+	tokens       *appoauth.CredentialTokenRepository
+	providerIDs  []string
 }
 
 func resolveOAuthRuntime(ctx context.Context, cfg config.Config, store *sqlitestore.Store) (oauthRuntime, error) {
@@ -62,5 +64,7 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, store *sqlitest
 	return oauthRuntime{
 		handler:      handler,
 		bearerTokens: appoauth.NewRuntimeTokenResolver(tokens, exchanger, profiles),
+		tokens:       tokens,
+		providerIDs:  []string{profile.ID},
 	}, nil
 }

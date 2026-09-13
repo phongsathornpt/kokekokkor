@@ -41,3 +41,7 @@ func (r *CredentialTokenRepository) Get(ctx context.Context, providerID string) 
 	}
 	return tokens, nil
 }
+
+func (r *CredentialTokenRepository) Delete(ctx context.Context, providerID string) error {
+	return r.credentials.Delete(ctx, credential.Ref{ProviderID: providerID, Kind: credential.KindOAuthTokenSet})
+}

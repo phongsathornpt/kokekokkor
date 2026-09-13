@@ -59,6 +59,13 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		}
 		return nil, err
 	}
+	admin, err := resolveAdminHandler(snapshot, targets, oauth)
+	if err != nil {
+		if catalogStore != nil {
+			_ = catalogStore.Close()
+		}
+		return nil, err
+	}
 
 	anthropicTarget := protocolDefaultTarget(targets, defaults, "anthropic")
 	geminiTarget := protocolDefaultTarget(targets, defaults, "gemini")
@@ -75,7 +82,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	geminiUpstream := geminiProvider.NewWithBearerTokenResolver(logger, oauth.bearerTokens)
 	geminiAPI := geminiProtocol.NewRoutedHandler(router, geminiTarget, geminiUpstream, crossProtocol)
 
-	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, oauth.handler, logger)
+	server := httpserver.NewWithAdmin(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, oauth.handler, admin, logger)
 	return &App{server: server.HTTP, logger: logger, catalogStore: catalogStore}, nil
 }
 
