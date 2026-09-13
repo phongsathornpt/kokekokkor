@@ -18,14 +18,17 @@ func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, cre
 		return nil, nil
 	}
 
-	var catalog *appcatalog.Service
+	var handler *adminhttp.Handler
+	var err error
 	if store != nil {
-		catalog = appcatalog.NewService(store, func(next domaincatalog.Snapshot) error {
+		catalog := appcatalog.NewService(store, func(next domaincatalog.Snapshot) error {
 			nextTargets, defaults, routes := routingInputs(next, credentials.Snapshot())
 			return router.ReplaceProtocols(nextTargets, defaults, routes)
 		})
+		handler, err = adminhttp.NewManageable(snapshot, catalog, credentials, oauth.tokens, oauth.providerIDs)
+	} else {
+		handler, err = adminhttp.NewManageable(snapshot, nil, credentials, oauth.tokens, oauth.providerIDs)
 	}
-	handler, err := adminhttp.NewManageable(snapshot, catalog, credentials, oauth.tokens, oauth.providerIDs)
 	if err != nil {
 		return nil, err
 	}
