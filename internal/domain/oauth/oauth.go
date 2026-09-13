@@ -8,11 +8,11 @@ import (
 )
 
 type Provider struct {
-	ID               string
-	AuthorizationURL string
-	TokenURL         string
-	ClientID         string
-	Scopes           []string
+	ID                  string
+	AuthorizationURL    string
+	TokenURL            string
+	ClientID            string
+	Scopes              []string
 	AuthorizationParams map[string]string
 }
 
@@ -33,12 +33,12 @@ func (p Provider) Validate() error {
 }
 
 type PendingAuthorization struct {
-	ProviderID  string
-	State       string
+	ProviderID   string
+	State        string
 	CodeVerifier string
-	RedirectURI string
-	CreatedAt   time.Time
-	ExpiresAt   time.Time
+	RedirectURI  string
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
 }
 
 type Authorization struct {
