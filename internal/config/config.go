@@ -14,6 +14,7 @@ type Config struct {
 	Providers         []OpenAICompatible
 	DefaultProviderID string
 	ModelRoutes       map[string][]ModelRouteTarget
+	Anthropic         Anthropic
 }
 
 type HTTP struct {
@@ -24,6 +25,13 @@ type OpenAICompatible struct {
 	ID      string `json:"id"`
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
+}
+
+type Anthropic struct {
+	ID      string
+	BaseURL string
+	APIKey  string
+	Version string
 }
 
 type ModelRouteTarget struct {
@@ -37,6 +45,12 @@ func Load() (Config, error) {
 		GatewayAPIKey:     os.Getenv("KOKEKOKKOR_API_KEY"),
 		DefaultProviderID: os.Getenv("KOKEKOKKOR_DEFAULT_PROVIDER_ID"),
 		ModelRoutes:       make(map[string][]ModelRouteTarget),
+		Anthropic: Anthropic{
+			ID:      envOr("KOKEKOKKOR_ANTHROPIC_PROVIDER_ID", "anthropic"),
+			BaseURL: os.Getenv("KOKEKOKKOR_ANTHROPIC_BASE_URL"),
+			APIKey:  os.Getenv("KOKEKOKKOR_ANTHROPIC_API_KEY"),
+			Version: envOr("KOKEKOKKOR_ANTHROPIC_VERSION", "2023-06-01"),
+		},
 	}
 
 	if raw := os.Getenv("KOKEKOKKOR_PROVIDERS_JSON"); raw != "" {
@@ -108,6 +122,18 @@ func (c Config) Validate() error {
 			if _, ok := providers[target.ProviderID]; !ok {
 				return fmt.Errorf("model route %q references unknown provider %q", model, target.ProviderID)
 			}
+		}
+	}
+
+	if c.Anthropic.BaseURL != "" {
+		if strings.TrimSpace(c.Anthropic.ID) == "" {
+			return fmt.Errorf("Anthropic provider ID must not be empty")
+		}
+		if strings.TrimSpace(c.Anthropic.Version) == "" {
+			return fmt.Errorf("Anthropic version must not be empty")
+		}
+		if err := validateBaseURL(c.Anthropic.BaseURL); err != nil {
+			return fmt.Errorf("Anthropic provider %q: %w", c.Anthropic.ID, err)
 		}
 	}
 	return nil
