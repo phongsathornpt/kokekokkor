@@ -55,8 +55,12 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, store *sqlitest
 	}
 	profiles := map[string]domainoauth.Provider{profile.ID: profile}
 	service := appoauth.NewService(appoauth.NewMemoryStateRepository(), exchanger, tokens)
+	handler, err := oauthhttp.New(service, profiles, oauthConfig.PublicBaseURL)
+	if err != nil {
+		return oauthRuntime{}, err
+	}
 	return oauthRuntime{
-		handler:      oauthhttp.New(service, profiles, oauthConfig.PublicBaseURL),
+		handler:      handler,
 		bearerTokens: appoauth.NewRuntimeTokenResolver(tokens, exchanger, profiles),
 	}, nil
 }
