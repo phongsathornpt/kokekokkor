@@ -22,13 +22,13 @@ The current implementation provides:
 - buffered OpenAI Chat Completions -> Gemini `generateContent` translation
 - buffered Gemini `generateContent` -> OpenAI Chat Completions translation
 - buffered OpenAI Responses -> Gemini `generateContent` translation
-- cross-protocol SSE translation for Chat Completions, Messages, and Responses portable Anthropic/OpenAI semantics
+- cross-protocol SSE translation for OpenAI Chat Completions, Anthropic Messages, OpenAI Responses, and Gemini `streamGenerateContent`
 - strict compatibility errors instead of silently dropping unsupported fields
 - protocol-appropriate client authentication
 - liveness/readiness endpoints
 - graceful shutdown and structured logs
 
-Translated Gemini streaming, Anthropic/Gemini translation, OAuth, persistence, the HTMX admin UI, reasoning translation, and realtime/WebSocket translation are staged as separate implementation slices.
+Anthropic/Gemini translation, OAuth, persistence, the HTMX admin UI, reasoning translation, and realtime/WebSocket translation are staged as separate implementation slices.
 
 ## OpenAI-compatible setup
 
@@ -122,7 +122,7 @@ export KOKEKOKKOR_MODEL_ROUTES_JSON='{
 }'
 ```
 
-For an OpenAI client, a route targeting Anthropic or Gemini enters the canonical semantic layer only for operations with an explicit translator. Anthropic Messages clients may route to OpenAI-compatible targets where the reverse translator exists. Gemini `generateContent` clients may route to OpenAI-compatible targets through the buffered Chat Completions adapter. Unsupported cross-protocol operations are rejected before an upstream call and can fall through to a later compatible route target while no response has been committed.
+For an OpenAI client, a route targeting Anthropic or Gemini enters the canonical semantic layer only for operations with an explicit translator. Anthropic Messages clients may route to OpenAI-compatible targets where the reverse translator exists. Gemini `generateContent` and `streamGenerateContent` clients may route to OpenAI-compatible targets through the Chat Completions adapters. Unsupported cross-protocol operations are rejected before an upstream call and can fall through to a later compatible route target while no response has been committed.
 
 Same-protocol routes remain on the transparent reverse-proxy path. They are not decoded into the canonical IR merely because routing is enabled.
 
@@ -133,15 +133,17 @@ Current runtime translation supports:
 ```text
 POST /v1/chat/completions  <->  POST /v1/messages
 POST /v1/responses         ->   POST /v1/messages
-POST /v1/chat/completions  <->  POST /v1beta/models/{model}:generateContent   (buffered only)
-POST /v1/responses         ->   POST /v1beta/models/{model}:generateContent   (buffered only)
+POST /v1/chat/completions  <->  POST /v1beta/models/{model}:generateContent
+stream: true               <->  POST /v1beta/models/{model}:streamGenerateContent?alt=sse
+POST /v1/responses         ->   POST /v1beta/models/{model}:generateContent
+stream: true               ->   POST /v1beta/models/{model}:streamGenerateContent?alt=sse
 ```
 
-The OpenAI/Anthropic paths support both buffered and streaming forms. The Gemini paths currently support buffered requests and responses only.
+The OpenAI/Anthropic paths support both buffered and streaming forms. The Gemini Chat path supports buffered translation in both directions and streaming translation in both directions. OpenAI Responses supports buffered and streaming translation to Gemini.
 
 Portable request/response mappings include text, supported image sources, function/tool definitions, tool calls, text tool results, sampling controls, stop sequences, model aliases, stop reasons, and portable usage fields. Responses additionally supports portable `instructions`, Responses message/input items, function call/output items, and Responses-native output objects. The Gemini adapter maps leading text-only system instructions, inline base64 images, function declarations/calls/responses, portable tool choice, sampling controls, stop sequences, and prompt/output/cache-read/reasoning-token usage. On the Responses-to-Gemini path, a leading text-only developer instruction is normalized into Gemini `systemInstruction`; mixed system/developer precedence is rejected instead of flattened.
 
-For translated `stream: true` OpenAI/Anthropic requests, the gateway works incrementally:
+Translated streaming uses the same canonical event pipeline across all supported protocol pairs:
 
 ```text
 upstream SSE
@@ -151,13 +153,15 @@ upstream SSE
   -> downstream client
 ```
 
-Chat/Messages streaming handles text deltas, tool-call starts, incremental tool arguments, usage, and protocol-native finish/stop events. Responses streaming emits Responses-native lifecycle events such as `response.created`, `response.output_item.added`, `response.output_text.delta`, `response.function_call_arguments.delta`, and `response.completed` or `response.incomplete`. Responses streams do not emit the Chat Completions `[DONE]` sentinel.
+Chat/Messages/Gemini streaming handles text deltas, tool-call starts, tool arguments, usage, and protocol-native finish/stop events. OpenAI incremental function-call argument fragments are buffered when the target is Gemini because Gemini function-call `args` is a complete JSON object. Gemini `streamGenerateContent` uses `alt=sse` and emits native `GenerateContentResponse` SSE chunks without a Chat Completions `[DONE]` sentinel.
 
-`stream_options.include_obfuscation` is honored on translated Responses streams. Same-protocol streams bypass the translation pipeline entirely and remain native byte streams.
+Responses streaming emits Responses-native lifecycle events such as `response.created`, `response.output_item.added`, `response.output_text.delta`, `response.function_call_arguments.delta`, and `response.completed` or `response.incomplete`. Responses streams do not emit the Chat Completions `[DONE]` sentinel. `stream_options.include_obfuscation` is honored on translated Responses streams, while Chat `stream_options.include_usage` controls translated Chat usage chunks.
 
-Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, reasoning/thinking streams, Responses built-in tools, persisted conversation/background controls, structured-output controls, refusal translation, Anthropic document blocks on the Chat Completions path, error-tagged Anthropic tool results, Gemini Chat developer-role messages, mixed or interleaved instruction precedence on the Responses-to-Gemini path, non-text Gemini system semantics, OpenAI URL/file-backed images on the Gemini translation path, Gemini provider-specific request controls, and translated Gemini streaming.
+Same-protocol streams bypass the translation pipeline entirely and remain native byte streams.
 
-Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Once translated or native streaming bytes are emitted, the selected route is final.
+Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, reasoning/thinking streams, Responses built-in tools, persisted conversation/background controls, structured-output controls, refusal translation, Anthropic document blocks on the Chat Completions path, error-tagged Anthropic tool results, Gemini Chat developer-role messages, mixed or interleaved instruction precedence on the Responses-to-Gemini path, non-text Gemini system semantics, OpenAI URL/file-backed images on the Gemini translation path, Gemini provider-specific request controls, unsupported streamed media output, provider-specific stream metadata, and unmapped streamed provider errors.
+
+Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Translated streams are primed before the downstream response is committed so initial translation failures remain eligible for fallback. Once translated or native streaming bytes are emitted, the selected route is final.
 
 ## Configuration
 
