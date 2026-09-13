@@ -2,10 +2,7 @@ module github.com/phongsathornpt/kokekokkor
 
 go 1.27
 
-require (
-	golang.org/x/oauth2 v0.37.0
-	modernc.org/sqlite v1.58.0
-)
+require modernc.org/sqlite v1.58.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
