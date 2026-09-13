@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,43 +14,37 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 )
 
-type Proxy struct {
-	logger    *slog.Logger
-	transport http.RoundTripper
-	proxies   sync.Map
+type bearerTokenResolver interface {
+	BearerToken(context.Context, string) (string, bool, error)
 }
 
-type retryableStatusError struct {
-	statusCode int
+type Proxy struct {
+	logger       *slog.Logger
+	transport    http.RoundTripper
+	proxies      sync.Map
+	bearerTokens bearerTokenResolver
 }
+
+type retryableStatusError struct{ statusCode int }
 
 func (e retryableStatusError) Error() string {
 	return fmt.Sprintf("retryable Gemini upstream status %d", e.statusCode)
 }
 
-func New(logger *slog.Logger) *Proxy {
-	return &Proxy{
-		logger: logger,
-		transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          256,
-			MaxIdleConnsPerHost:   64,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 0,
-		},
-	}
+func New(logger *slog.Logger) *Proxy { return NewWithBearerTokenResolver(logger, nil) }
+func NewWithBearerTokenResolver(logger *slog.Logger, bearerTokens bearerTokenResolver) *Proxy {
+	return &Proxy{logger: logger, bearerTokens: bearerTokens, transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, MaxIdleConns: 256, MaxIdleConnsPerHost: 64, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 0}}
 }
 
-// ServeHTTPTo returns an error only while no response has been committed. A
-// non-final attempt can intercept retryable statuses so routing may continue.
 func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provider.Target, allowFallback bool) error {
 	upstreamURL, err := url.Parse(target.BaseURL)
 	if err != nil {
 		return fmt.Errorf("invalid Gemini upstream %q: %w", target.ID, err)
 	}
-
+	bearerToken, err := p.resolveBearerToken(r.Context(), target.ID)
+	if err != nil {
+		return err
+	}
 	base := p.reverseProxy(upstreamURL)
 	proxy := *base
 	var forwardErr error
@@ -63,14 +58,8 @@ func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provi
 	}
 	proxy.ErrorHandler = func(_ http.ResponseWriter, request *http.Request, err error) {
 		forwardErr = err
-		p.logger.Warn("Gemini upstream attempt failed",
-			"provider", target.ID,
-			"error", err,
-			"method", request.Method,
-			"path", request.URL.Path,
-		)
+		p.logger.Warn("Gemini upstream attempt failed", "provider", target.ID, "error", err, "method", request.Method, "path", request.URL.Path)
 	}
-
 	req := r.Clone(r.Context())
 	req.Header = r.Header.Clone()
 	req.Header.Del("Authorization")
@@ -80,12 +69,27 @@ func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provi
 		values.Del("key")
 		req.URL.RawQuery = values.Encode()
 	}
-	if target.APIKey != "" {
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
+	} else if target.APIKey != "" {
 		req.Header.Set("X-Goog-Api-Key", target.APIKey)
 	}
-
 	proxy.ServeHTTP(w, req)
 	return forwardErr
+}
+
+func (p *Proxy) resolveBearerToken(ctx context.Context, providerID string) (string, error) {
+	if p.bearerTokens == nil {
+		return "", nil
+	}
+	token, found, err := p.bearerTokens.BearerToken(ctx, providerID)
+	if err != nil {
+		return "", fmt.Errorf("resolve Gemini OAuth token: %w", err)
+	}
+	if !found {
+		return "", nil
+	}
+	return token, nil
 }
 
 func (p *Proxy) reverseProxy(target *url.URL) *httputil.ReverseProxy {
@@ -93,16 +97,7 @@ func (p *Proxy) reverseProxy(target *url.URL) *httputil.ReverseProxy {
 	if cached, ok := p.proxies.Load(key); ok {
 		return cached.(*httputil.ReverseProxy)
 	}
-
-	proxy := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(target)
-			pr.SetXForwarded()
-		},
-		Transport:     p.transport,
-		FlushInterval: -1,
-	}
-
+	proxy := &httputil.ReverseProxy{Rewrite: func(pr *httputil.ProxyRequest) { pr.SetURL(target); pr.SetXForwarded() }, Transport: p.transport, FlushInterval: -1}
 	actual, _ := p.proxies.LoadOrStore(key, proxy)
 	return actual.(*httputil.ReverseProxy)
 }
