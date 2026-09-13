@@ -14,15 +14,15 @@ The current implementation provides:
 - lock-free immutable routing snapshots
 - native Anthropic Messages API passthrough
 - native Anthropic token-counting passthrough
-- non-streaming OpenAI Chat Completions -> Anthropic Messages translation
-- non-streaming Anthropic Messages -> OpenAI Chat Completions translation
+- OpenAI Chat Completions -> Anthropic Messages translation
+- Anthropic Messages -> OpenAI Chat Completions translation
+- cross-protocol SSE translation in both directions
 - strict compatibility errors instead of silently dropping unsupported fields
-- SSE-friendly native reverse-proxy transports
 - protocol-appropriate client authentication
 - liveness/readiness endpoints
 - graceful shutdown and structured logs
 
-Cross-protocol streaming, Gemini, OAuth, persistence, and the HTMX admin UI are staged as separate implementation slices.
+Gemini, OAuth, persistence, the HTMX admin UI, OpenAI Responses translation, and realtime/WebSocket translation are staged as separate implementation slices.
 
 ## OpenAI-compatible setup
 
@@ -86,23 +86,37 @@ export KOKEKOKKOR_MODEL_ROUTES_JSON='{
 }'
 ```
 
-For an OpenAI Chat Completions client, `via-anthropic` decodes the request into the canonical IR, encodes an Anthropic Messages request, calls the Anthropic target, then converts the response back into an OpenAI Chat Completions response. An Anthropic Messages client can use an exact route whose target is OpenAI-compatible and the reverse translation is applied.
+For an OpenAI Chat Completions client, `via-anthropic` decodes the request into the canonical IR, encodes an Anthropic Messages request, calls the Anthropic target, then converts the response back into OpenAI format. An Anthropic Messages client can use an exact route whose target is OpenAI-compatible and the reverse translation is applied.
 
 Same-protocol routes remain on the transparent reverse-proxy path. They are not decoded into the canonical IR merely because routing is enabled.
 
 ## Cross-protocol translation scope
 
-Current runtime translation is intentionally limited to non-streaming:
+Current runtime translation supports both buffered and streaming forms of:
 
 ```text
 POST /v1/chat/completions  <->  POST /v1/messages
 ```
 
-Portable mappings currently include text, supported image sources, function/tool definitions, tool calls, text tool results, sampling controls, stop sequences, model aliases, stop reasons, and portable usage fields.
+Portable request/response mappings currently include text, supported image sources, function/tool definitions, tool calls, text tool results, sampling controls, stop sequences, model aliases, stop reasons, and portable usage fields.
 
-Translation is strict. Requests are rejected when a feature cannot currently be represented without semantic loss. Examples include cross-protocol `stream: true`, unsupported provider extensions, Anthropic thinking blocks/control, OpenAI structured-output controls on the Anthropic path, Anthropic document blocks on the Chat Completions path, error-tagged Anthropic tool results, and provider-specific usage fields with no target equivalent.
+For `stream: true`, the gateway translates incrementally:
 
-Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Once an upstream generation succeeds, a failure while translating that response does not trigger another provider call because that could duplicate generation and cost.
+```text
+upstream SSE
+  -> provider SSE decoder
+  -> canonical StreamEvent
+  -> target-protocol SSE encoder
+  -> downstream client
+```
+
+The stream pipeline handles text deltas, tool-call starts, incremental tool arguments, usage, finish/stop reasons, and protocol-native termination events. Same-protocol streams bypass this pipeline entirely and remain native byte streams.
+
+Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, Anthropic thinking/reasoning streaming, OpenAI structured-output controls on the Anthropic path, Anthropic document blocks on the Chat Completions path, error-tagged Anthropic tool results, OpenAI reasoning-token usage when targeting Anthropic, and Anthropic cache-creation usage when targeting OpenAI.
+
+Anthropic-to-OpenAI streaming forces upstream OpenAI usage reporting so the gateway can construct Anthropic usage events. OpenAI only reports prompt-token usage at the end of a Chat Completions stream, so translated Anthropic `message_start` currently begins with zero usage and the final `message_delta` carries the complete usage once it becomes available. Native Anthropic streams are unaffected.
+
+Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Once translated SSE bytes are emitted, the selected route is final. A parser failure before the first translated event is returned as a gateway translation error rather than an empty HTTP 200 response.
 
 ## Configuration
 
@@ -146,11 +160,10 @@ client
          -> canonical semantic IR
          -> compatibility policy
          -> encode upstream request
-         -> buffered upstream HTTP call
-         -> decode upstream response
-         -> canonical semantic IR
-         -> encode client response
+         -> upstream HTTP
+              non-stream -> buffered response translation
+              stream     -> SSE decoder -> StreamEvent -> SSE encoder -> io.Pipe
   -> client
 ```
 
-Native passthrough is the fidelity and streaming path. Cross-protocol translation only enters the canonical semantic layer when the selected target speaks a different protocol.
+Native passthrough is the fidelity path. Cross-protocol translation only enters the canonical semantic layer when the selected target speaks a different protocol.

@@ -11,13 +11,20 @@ import (
 )
 
 type fakeClient struct {
-	request  upstream.Request
-	response upstream.Response
+	request        upstream.Request
+	response       upstream.Response
+	streamResponse upstream.StreamResponse
+	streamErr      error
 }
 
 func (f *fakeClient) Do(_ context.Context, _ provider.Target, request upstream.Request) (upstream.Response, error) {
 	f.request = request
 	return f.response, nil
+}
+
+func (f *fakeClient) Stream(_ context.Context, _ provider.Target, request upstream.Request) (upstream.StreamResponse, error) {
+	f.request = request
+	return f.streamResponse, f.streamErr
 }
 
 func TestOpenAIChatToAnthropicTranslatesBothDirections(t *testing.T) {
