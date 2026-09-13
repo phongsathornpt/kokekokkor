@@ -13,7 +13,9 @@ import (
 
 type boundaryRouter struct{ plan routing.Plan }
 
-func (r boundaryRouter) Resolve(context.Context, routing.Request) (routing.Plan, error) { return r.plan, nil }
+func (r boundaryRouter) Resolve(context.Context, routing.Request) (routing.Plan, error) {
+	return r.plan, nil
+}
 
 type boundaryForwarder struct{ calls int }
 
