@@ -11,7 +11,7 @@ type Server struct {
 	HTTP *http.Server
 }
 
-func New(addr, gatewayAPIKey string, ready func() bool, openAI http.Handler, logger *slog.Logger) *Server {
+func New(addr, gatewayAPIKey string, ready func() bool, openAI, anthropic http.Handler, logger *slog.Logger) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeHealth(w, http.StatusOK, "ok")
@@ -23,6 +23,9 @@ func New(addr, gatewayAPIKey string, ready func() bool, openAI http.Handler, log
 		}
 		writeHealth(w, http.StatusOK, "ready")
 	})
+
+	mux.Handle("POST /v1/messages", anthropicAPIKeyAuth(gatewayAPIKey, anthropic))
+	mux.Handle("POST /v1/messages/count_tokens", anthropicAPIKeyAuth(gatewayAPIKey, anthropic))
 	mux.Handle("/v1/", bearerAuth(gatewayAPIKey, openAI))
 	mux.Handle("/v1", bearerAuth(gatewayAPIKey, openAI))
 
