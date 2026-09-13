@@ -74,18 +74,7 @@ func catalogIsEmpty(snapshot domaincatalog.Snapshot) bool {
 	return len(snapshot.Providers) == 0 && len(snapshot.Defaults) == 0 && len(snapshot.Routes) == 0
 }
 
-func routingInputs(snapshot domaincatalog.Snapshot, cfg config.Config) ([]provider.Target, map[provider.Protocol]string, map[string][]routing.RouteTarget) {
-	credentials := make(map[string]string, len(cfg.Providers)+2)
-	for _, item := range cfg.Providers {
-		credentials[item.ID] = item.APIKey
-	}
-	if cfg.Anthropic.ID != "" {
-		credentials[cfg.Anthropic.ID] = cfg.Anthropic.APIKey
-	}
-	if cfg.Gemini.ID != "" {
-		credentials[cfg.Gemini.ID] = cfg.Gemini.APIKey
-	}
-
+func routingInputs(snapshot domaincatalog.Snapshot, credentials map[string]string) ([]provider.Target, map[provider.Protocol]string, map[string][]routing.RouteTarget) {
 	targets := make([]provider.Target, 0, len(snapshot.Providers))
 	for _, item := range snapshot.Providers {
 		if !item.Enabled {

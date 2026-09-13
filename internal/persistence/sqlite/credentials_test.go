@@ -62,6 +62,52 @@ func TestCredentialRepositoryEncryptsAtRest(t *testing.T) {
 	}
 }
 
+func TestCredentialRepositorySurvivesCatalogReplacement(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "credentials.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	initial := domaincatalog.Snapshot{
+		Providers: []domaincatalog.Provider{{ID: "provider-a", Protocol: provider.ProtocolOpenAI, BaseURL: "https://one.example", Enabled: true}},
+		Defaults:  map[provider.Protocol]string{provider.ProtocolOpenAI: "provider-a"},
+		Routes:    map[string][]domaincatalog.RouteTarget{"portable": {{ProviderID: "provider-a", Model: "model-one"}}},
+	}
+	if err := store.Replace(ctx, initial); err != nil {
+		t.Fatalf("Replace(initial) error = %v", err)
+	}
+	ring, err := secretbox.NewKeyring("v1", map[string][]byte{"v1": bytes.Repeat([]byte{11}, 32)})
+	if err != nil {
+		t.Fatalf("NewKeyring() error = %v", err)
+	}
+	repository, err := store.Credentials(ctx, ring)
+	if err != nil {
+		t.Fatalf("Credentials() error = %v", err)
+	}
+	ref := credential.Ref{ProviderID: "provider-a", Kind: credential.KindAPIKey}
+	if err := repository.Put(ctx, ref, []byte("keep-me")); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+
+	updated := domaincatalog.Snapshot{
+		Providers: []domaincatalog.Provider{{ID: "provider-a", Protocol: provider.ProtocolOpenAI, BaseURL: "https://two.example", Enabled: true}},
+		Defaults:  map[provider.Protocol]string{provider.ProtocolOpenAI: "provider-a"},
+		Routes:    map[string][]domaincatalog.RouteTarget{"portable": {{ProviderID: "provider-a", Model: "model-two"}}},
+	}
+	if err := store.Replace(ctx, updated); err != nil {
+		t.Fatalf("Replace(updated) error = %v", err)
+	}
+	got, err := repository.Get(ctx, ref)
+	if err != nil {
+		t.Fatalf("Get() after catalog replace error = %v", err)
+	}
+	if string(got) != "keep-me" {
+		t.Fatalf("Get() after catalog replace = %q", got)
+	}
+}
+
 func TestCredentialRepositorySupportsKeyRotation(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, filepath.Join(t.TempDir(), "credentials.db"))

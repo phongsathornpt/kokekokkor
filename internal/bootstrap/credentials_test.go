@@ -38,8 +38,8 @@ func TestResolveCredentialsSeedsOnceAndPrefersPersistedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveCredentials(first) error = %v", err)
 	}
-	if resolved["provider-a"] != "first-value" {
-		t.Fatalf("first resolved value = %q", resolved["provider-a"])
+	if got := resolved.Snapshot()["provider-a"]; got != "first-value" {
+		t.Fatalf("first resolved value = %q", got)
 	}
 
 	cfg.Providers[0].APIKey = "second-value"
@@ -47,7 +47,7 @@ func TestResolveCredentialsSeedsOnceAndPrefersPersistedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveCredentials(second) error = %v", err)
 	}
-	if resolved["provider-a"] != "first-value" {
-		t.Fatalf("persisted value = %q, want first-value", resolved["provider-a"])
+	if got := resolved.Snapshot()["provider-a"]; got != "first-value" {
+		t.Fatalf("persisted value = %q, want first-value", got)
 	}
 }
