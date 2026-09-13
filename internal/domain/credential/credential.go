@@ -8,8 +8,8 @@ import (
 type Kind string
 
 const (
-	KindAPIKey           Kind = "api_key"
-	KindOAuthAccessToken Kind = "oauth_access_token"
+	KindAPIKey            Kind = "api_key"
+	KindOAuthAccessToken  Kind = "oauth_access_token"
 	KindOAuthRefreshToken Kind = "oauth_refresh_token"
 )
 
