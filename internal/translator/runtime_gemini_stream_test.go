@@ -73,3 +73,47 @@ func TestOpenAIResponsesToGeminiStreamTranslatesLifecycle(t *testing.T) {
 		t.Fatalf("Responses stream must not emit [DONE]: %q", text)
 	}
 }
+
+func TestGeminiStreamGenerateContentToOpenAITranslatesNativeSSE(t *testing.T) {
+	client := &fakeClient{streamResponse: upstream.StreamResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-upstream","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`,
+			``,
+			`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-upstream","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}`,
+			``,
+			`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-upstream","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+			``,
+			`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"gpt-upstream","choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`,
+			``,
+			`data: [DONE]`,
+			``,
+		}, "\n"))),
+	}}
+	runtime := New(client)
+	response, err := runtime.GeminiStreamGenerateContentToOpenAI(context.Background(), provider.Target{
+		ID: "openai", Protocol: provider.ProtocolOpenAI, BaseURL: "https://openai.example",
+	}, "gpt-upstream", http.Header{}, []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`))
+	if err != nil {
+		t.Fatalf("GeminiStreamGenerateContentToOpenAI() error = %v", err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read translated Gemini stream: %v", err)
+	}
+	if client.request.Path != "/v1/chat/completions" {
+		t.Fatalf("upstream path = %q", client.request.Path)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"text":"hello"`) || !strings.Contains(text, `"finishReason":"STOP"`) {
+		t.Fatalf("translated Gemini stream = %q", text)
+	}
+	if strings.Contains(text, "[DONE]") {
+		t.Fatalf("native Gemini stream must not emit [DONE]: %q", text)
+	}
+	if got := response.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+}
