@@ -155,7 +155,7 @@ func buildSnapshot(targets []provider.Target, defaultProviderIDs map[provider.Pr
 		}
 		target.Protocol = target.EffectiveProtocol()
 		switch target.Protocol {
-		case provider.ProtocolOpenAI, provider.ProtocolAnthropic:
+		case provider.ProtocolOpenAI, provider.ProtocolAnthropic, provider.ProtocolGemini:
 		default:
 			return nil, fmt.Errorf("%w: %q", ErrInvalidProtocol, target.Protocol)
 		}
@@ -168,7 +168,7 @@ func buildSnapshot(targets []provider.Target, defaultProviderIDs map[provider.Pr
 			continue
 		}
 		switch protocol {
-		case provider.ProtocolOpenAI, provider.ProtocolAnthropic:
+		case provider.ProtocolOpenAI, provider.ProtocolAnthropic, provider.ProtocolGemini:
 		default:
 			return nil, fmt.Errorf("%w: %q", ErrInvalidProtocol, protocol)
 		}
