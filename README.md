@@ -21,13 +21,14 @@ The current implementation provides:
 - OpenAI Responses -> Anthropic Messages translation
 - buffered OpenAI Chat Completions -> Gemini `generateContent` translation
 - buffered Gemini `generateContent` -> OpenAI Chat Completions translation
+- buffered OpenAI Responses -> Gemini `generateContent` translation
 - cross-protocol SSE translation for Chat Completions, Messages, and Responses portable Anthropic/OpenAI semantics
 - strict compatibility errors instead of silently dropping unsupported fields
 - protocol-appropriate client authentication
 - liveness/readiness endpoints
 - graceful shutdown and structured logs
 
-OpenAI Responses/Gemini translation, translated Gemini streaming, Anthropic/Gemini translation, OAuth, persistence, the HTMX admin UI, reasoning translation, and realtime/WebSocket translation are staged as separate implementation slices.
+Translated Gemini streaming, Anthropic/Gemini translation, OAuth, persistence, the HTMX admin UI, reasoning translation, and realtime/WebSocket translation are staged as separate implementation slices.
 
 ## OpenAI-compatible setup
 
@@ -133,11 +134,12 @@ Current runtime translation supports:
 POST /v1/chat/completions  <->  POST /v1/messages
 POST /v1/responses         ->   POST /v1/messages
 POST /v1/chat/completions  <->  POST /v1beta/models/{model}:generateContent   (buffered only)
+POST /v1/responses         ->   POST /v1beta/models/{model}:generateContent   (buffered only)
 ```
 
-The OpenAI/Anthropic paths support both buffered and streaming forms. The Gemini path currently supports buffered requests and responses only.
+The OpenAI/Anthropic paths support both buffered and streaming forms. The Gemini paths currently support buffered requests and responses only.
 
-Portable request/response mappings include text, supported image sources, function/tool definitions, tool calls, text tool results, sampling controls, stop sequences, model aliases, stop reasons, and portable usage fields. Responses additionally supports portable `instructions`, Responses message/input items, function call/output items, and Responses-native output objects. The Gemini adapter maps leading text-only system instructions, inline base64 images, function declarations/calls/responses, portable tool choice, sampling controls, stop sequences, and prompt/output/cache-read/reasoning-token usage.
+Portable request/response mappings include text, supported image sources, function/tool definitions, tool calls, text tool results, sampling controls, stop sequences, model aliases, stop reasons, and portable usage fields. Responses additionally supports portable `instructions`, Responses message/input items, function call/output items, and Responses-native output objects. The Gemini adapter maps leading text-only system instructions, inline base64 images, function declarations/calls/responses, portable tool choice, sampling controls, stop sequences, and prompt/output/cache-read/reasoning-token usage. On the Responses-to-Gemini path, a leading text-only developer instruction is normalized into Gemini `systemInstruction`; mixed system/developer precedence is rejected instead of flattened.
 
 For translated `stream: true` OpenAI/Anthropic requests, the gateway works incrementally:
 
@@ -153,7 +155,7 @@ Chat/Messages streaming handles text deltas, tool-call starts, incremental tool 
 
 `stream_options.include_obfuscation` is honored on translated Responses streams. Same-protocol streams bypass the translation pipeline entirely and remain native byte streams.
 
-Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, reasoning/thinking streams, Responses built-in tools, persisted conversation/background controls, structured-output controls, refusal translation, Anthropic document blocks on the Chat Completions path, error-tagged Anthropic tool results, Gemini developer-role messages, interleaved or non-text Gemini system semantics, OpenAI URL/file-backed images on the Gemini translation path, Gemini provider-specific request controls, and translated Gemini streaming.
+Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, reasoning/thinking streams, Responses built-in tools, persisted conversation/background controls, structured-output controls, refusal translation, Anthropic document blocks on the Chat Completions path, error-tagged Anthropic tool results, Gemini Chat developer-role messages, mixed or interleaved instruction precedence on the Responses-to-Gemini path, non-text Gemini system semantics, OpenAI URL/file-backed images on the Gemini translation path, Gemini provider-specific request controls, and translated Gemini streaming.
 
 Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Once translated or native streaming bytes are emitted, the selected route is final.
 
