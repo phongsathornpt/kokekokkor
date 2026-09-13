@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,16 +15,25 @@ import (
 
 type geminiResponsesTranslatorStub struct {
 	*stubCrossTranslator
-	called bool
-	model  string
-	result upstream.Response
-	err    error
+	called       bool
+	streamCalled bool
+	model        string
+	result       upstream.Response
+	streamResult upstream.StreamResponse
+	err          error
+	streamErr    error
 }
 
 func (s *geminiResponsesTranslatorStub) OpenAIResponsesToGemini(_ context.Context, _ provider.Target, model string, _ http.Header, _ []byte) (upstream.Response, error) {
 	s.called = true
 	s.model = model
 	return s.result, s.err
+}
+
+func (s *geminiResponsesTranslatorStub) OpenAIResponsesToGeminiStream(_ context.Context, _ provider.Target, model string, _ http.Header, _ []byte) (upstream.StreamResponse, error) {
+	s.streamCalled = true
+	s.model = model
+	return s.streamResult, s.streamErr
 }
 
 func TestHandlerUsesGeminiResponsesTranslator(t *testing.T) {
@@ -57,9 +67,16 @@ func TestHandlerUsesGeminiResponsesTranslator(t *testing.T) {
 	}
 }
 
-func TestHandlerRejectsGeminiResponsesStreamingBeforeTranslator(t *testing.T) {
+func TestHandlerUsesGeminiResponsesStreamTranslator(t *testing.T) {
 	forwarder := &stubForwarder{fail: map[string]error{}}
-	cross := &geminiResponsesTranslatorStub{stubCrossTranslator: &stubCrossTranslator{}}
+	cross := &geminiResponsesTranslatorStub{
+		stubCrossTranslator: &stubCrossTranslator{},
+		streamResult: upstream.StreamResponse{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n")),
+		},
+	}
 	handler := NewHandler(stubRouter{plan: routing.Plan{
 		RequestedModel: "portable",
 		Attempts: []routing.Attempt{{
@@ -72,8 +89,14 @@ func TestHandlerRejectsGeminiResponsesStreamingBeforeTranslator(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest || cross.called {
-		t.Fatalf("status=%d called=%v body=%s", rec.Code, cross.called, rec.Body.String())
+	if rec.Code != http.StatusOK || !cross.streamCalled || cross.called || cross.model != "gemini-upstream" {
+		t.Fatalf("status=%d streamCalled=%v bufferedCalled=%v model=%q body=%s", rec.Code, cross.streamCalled, cross.called, cross.model, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "response.completed") {
+		t.Fatalf("body = %q", rec.Body.String())
 	}
 	if len(forwarder.calls) != 0 {
 		t.Fatalf("raw forwarder calls = %#v", forwarder.calls)
