@@ -18,7 +18,7 @@ func TestServerDispatchesV1BetaToGemini(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	server := New(":0", "", func() bool { return true }, unexpected, unexpected, gemini, logger)
+	server := New(":0", "", func() bool { return true }, unexpected, unexpected, gemini, nil, logger)
 	req := httptest.NewRequest(http.MethodGet, "http://gateway/v1beta/models", nil)
 	rec := httptest.NewRecorder()
 	server.HTTP.Handler.ServeHTTP(rec, req)
