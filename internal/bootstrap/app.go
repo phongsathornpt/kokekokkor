@@ -76,7 +76,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		}
 		return nil, err
 	}
-	admin, err := resolveAdminHandler(cfg, snapshot, targets, credentials, oauth, catalogStore, router)
+	admin, err := resolveAdminHandler(cfg, snapshot, credentials, oauth, catalogStore, router)
 	if err != nil {
 		if catalogStore != nil {
 			_ = catalogStore.Close()
