@@ -15,13 +15,16 @@ import (
 )
 
 type stubCrossTranslator struct {
-	called       bool
-	streamCalled bool
-	model        string
-	result       upstream.Response
-	streamResult upstream.StreamResponse
-	err          error
-	streamErr    error
+	called                bool
+	streamCalled          bool
+	responsesStreamCalled bool
+	model                 string
+	result                upstream.Response
+	streamResult          upstream.StreamResponse
+	responsesStreamResult upstream.StreamResponse
+	err                   error
+	streamErr             error
+	responsesStreamErr    error
 }
 
 func (s *stubCrossTranslator) OpenAIChatToAnthropic(_ context.Context, _ provider.Target, model string, _ http.Header, _ []byte) (upstream.Response, error) {
