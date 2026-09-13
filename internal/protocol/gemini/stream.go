@@ -32,6 +32,7 @@ type geminiStreamDecoder struct {
 	emit       func(llm.StreamEvent) error
 	started    bool
 	stopped    bool
+	sawTool    bool
 	nextBlock  int
 	active     *geminiDecodeBlock
 	responseID string
@@ -40,8 +41,7 @@ type geminiStreamDecoder struct {
 
 func DecodeGenerateContentStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 	decoder := &geminiStreamDecoder{emit: emit}
-	err := sse.Decode(r, decoder.decodeEvent)
-	if err != nil {
+	if err := sse.Decode(r, decoder.decodeEvent); err != nil {
 		return err
 	}
 	if decoder.started && !decoder.stopped {
@@ -97,7 +97,7 @@ func (d *geminiStreamDecoder) decodeEvent(event sse.Event) error {
 		return nil
 	}
 	stop := decodeGeminiFinishReason(candidate.FinishReason, nil)
-	if d.active != nil && d.active.kind == "tool" {
+	if d.sawTool && stop == llm.StopReasonEndTurn {
 		stop = llm.StopReasonToolUse
 	}
 	if stop == llm.StopReasonUnknown {
@@ -155,6 +155,9 @@ func (d *geminiStreamDecoder) ensureText() error {
 
 func (d *geminiStreamDecoder) decodeFunctionCall(call geminiFunctionCall) error {
 	id := call.ID
+	if id == "" && d.active != nil && d.active.kind == "tool" && d.active.toolName == call.Name {
+		id = d.active.toolID
+	}
 	if id == "" {
 		id = fmt.Sprintf("gemini_call_%d", d.nextBlock)
 	}
@@ -165,6 +168,7 @@ func (d *geminiStreamDecoder) decodeFunctionCall(call geminiFunctionCall) error 
 		block := &geminiDecodeBlock{index: d.nextBlock, kind: "tool", toolID: id, toolName: call.Name}
 		d.nextBlock++
 		d.active = block
+		d.sawTool = true
 		if err := d.emit(llm.StreamEvent{
 			Type:  llm.StreamEventToolCallStart,
 			Index: block.index,
