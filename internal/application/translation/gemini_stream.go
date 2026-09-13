@@ -60,7 +60,7 @@ func GeminiToOpenAIStreamEvent(event llm.StreamEvent) error {
 }
 
 func GeminiToResponsesStreamEvent(event llm.StreamEvent) error {
-	if err := validateGeminiStreamEvent(event, false); err != nil {
+	if err := validateGeminiStreamEvent(event, true); err != nil {
 		return err
 	}
 	if event.Type == llm.StreamEventResponseStop && event.StopReason == llm.StopReasonContentBlock {
