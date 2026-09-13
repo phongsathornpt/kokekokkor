@@ -66,6 +66,11 @@ func (s *Store) migrate(ctx context.Context) error {
 			base_url TEXT NOT NULL,
 			enabled INTEGER NOT NULL CHECK (enabled IN (0, 1))
 		)`,
+		`CREATE TABLE IF NOT EXISTS protocol_defaults (
+			protocol TEXT PRIMARY KEY,
+			provider_id TEXT NOT NULL,
+			FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS model_routes (
 			model TEXT NOT NULL,
 			position INTEGER NOT NULL CHECK (position >= 0),
@@ -89,7 +94,10 @@ func (s *Store) migrate(ctx context.Context) error {
 }
 
 func (s *Store) Load(ctx context.Context) (domaincatalog.Snapshot, error) {
-	snapshot := domaincatalog.Snapshot{Routes: make(map[string][]domaincatalog.RouteTarget)}
+	snapshot := domaincatalog.Snapshot{
+		Defaults: make(map[provider.Protocol]string),
+		Routes:   make(map[string][]domaincatalog.RouteTarget),
+	}
 
 	rows, err := s.db.QueryContext(ctx, `SELECT id, protocol, base_url, enabled FROM providers ORDER BY id`)
 	if err != nil {
@@ -114,6 +122,26 @@ func (s *Store) Load(ctx context.Context) (domaincatalog.Snapshot, error) {
 		return domaincatalog.Snapshot{}, fmt.Errorf("iterate providers: %w", err)
 	}
 
+	defaultRows, err := s.db.QueryContext(ctx, `SELECT protocol, provider_id FROM protocol_defaults ORDER BY protocol`)
+	if err != nil {
+		return domaincatalog.Snapshot{}, fmt.Errorf("load protocol defaults: %w", err)
+	}
+	for defaultRows.Next() {
+		var protocolName string
+		var providerID string
+		if err := defaultRows.Scan(&protocolName, &providerID); err != nil {
+			defaultRows.Close()
+			return domaincatalog.Snapshot{}, fmt.Errorf("scan protocol default: %w", err)
+		}
+		snapshot.Defaults[provider.Protocol(protocolName)] = providerID
+	}
+	if err := defaultRows.Close(); err != nil {
+		return domaincatalog.Snapshot{}, fmt.Errorf("close protocol default rows: %w", err)
+	}
+	if err := defaultRows.Err(); err != nil {
+		return domaincatalog.Snapshot{}, fmt.Errorf("iterate protocol defaults: %w", err)
+	}
+
 	routeRows, err := s.db.QueryContext(ctx, `SELECT model, provider_id, upstream_model FROM model_routes ORDER BY model, position`)
 	if err != nil {
 		return domaincatalog.Snapshot{}, fmt.Errorf("load model routes: %w", err)
@@ -133,7 +161,7 @@ func (s *Store) Load(ctx context.Context) (domaincatalog.Snapshot, error) {
 	if err := routeRows.Err(); err != nil {
 		return domaincatalog.Snapshot{}, fmt.Errorf("iterate model routes: %w", err)
 	}
-	if err := snapshot.Validate(); err != nil && (len(snapshot.Providers) != 0 || len(snapshot.Routes) != 0) {
+	if err := snapshot.Validate(); err != nil && (len(snapshot.Providers) != 0 || len(snapshot.Defaults) != 0 || len(snapshot.Routes) != 0) {
 		return domaincatalog.Snapshot{}, fmt.Errorf("validate persisted catalog: %w", err)
 	}
 	return snapshot, nil
@@ -151,6 +179,9 @@ func (s *Store) Replace(ctx context.Context, snapshot domaincatalog.Snapshot) er
 	if _, err := tx.ExecContext(ctx, `DELETE FROM model_routes`); err != nil {
 		return fmt.Errorf("clear model routes: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM protocol_defaults`); err != nil {
+		return fmt.Errorf("clear protocol defaults: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM providers`); err != nil {
 		return fmt.Errorf("clear providers: %w", err)
 	}
@@ -166,6 +197,16 @@ func (s *Store) Replace(ctx context.Context, snapshot domaincatalog.Snapshot) er
 		}
 		if _, err := providerStmt.ExecContext(ctx, item.ID, string(item.Protocol), item.BaseURL, enabled); err != nil {
 			return fmt.Errorf("insert provider %q: %w", item.ID, err)
+		}
+	}
+	defaultStmt, err := tx.PrepareContext(ctx, `INSERT INTO protocol_defaults(protocol, provider_id) VALUES (?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare protocol default insert: %w", err)
+	}
+	defer defaultStmt.Close()
+	for protocolName, providerID := range snapshot.Defaults {
+		if _, err := defaultStmt.ExecContext(ctx, string(protocolName), providerID); err != nil {
+			return fmt.Errorf("insert default %q: %w", protocolName, err)
 		}
 	}
 	routeStmt, err := tx.PrepareContext(ctx, `INSERT INTO model_routes(model, position, provider_id, upstream_model) VALUES (?, ?, ?, ?)`)
