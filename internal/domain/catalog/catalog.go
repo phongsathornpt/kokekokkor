@@ -21,6 +21,7 @@ type RouteTarget struct {
 
 type Snapshot struct {
 	Providers []Provider
+	Defaults  map[provider.Protocol]string
 	Routes    map[string][]RouteTarget
 }
 
@@ -42,6 +43,23 @@ func (s Snapshot) Validate() error {
 			return fmt.Errorf("duplicate provider ID %q", item.ID)
 		}
 		providers[item.ID] = item
+	}
+	for protocol, providerID := range s.Defaults {
+		switch protocol {
+		case provider.ProtocolOpenAI, provider.ProtocolAnthropic, provider.ProtocolGemini:
+		default:
+			return fmt.Errorf("default uses unsupported protocol %q", protocol)
+		}
+		configured, ok := providers[providerID]
+		if !ok {
+			return fmt.Errorf("default %q references unknown provider %q", protocol, providerID)
+		}
+		if configured.Protocol != protocol {
+			return fmt.Errorf("default %q references provider %q with protocol %q", protocol, providerID, configured.Protocol)
+		}
+		if !configured.Enabled {
+			return fmt.Errorf("default %q references disabled provider %q", protocol, providerID)
+		}
 	}
 	for model, targets := range s.Routes {
 		if strings.TrimSpace(model) == "" {
