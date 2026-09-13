@@ -13,7 +13,9 @@ import (
 
 type testRouter struct{ plan routing.Plan }
 
-func (r testRouter) Resolve(context.Context, routing.Request) (routing.Plan, error) { return r.plan, nil }
+func (r testRouter) Resolve(context.Context, routing.Request) (routing.Plan, error) {
+	return r.plan, nil
+}
 
 type testForwarder struct{ path string }
 
