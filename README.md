@@ -16,13 +16,14 @@ The current implementation provides:
 - native Anthropic token-counting passthrough
 - OpenAI Chat Completions -> Anthropic Messages translation
 - Anthropic Messages -> OpenAI Chat Completions translation
-- cross-protocol SSE translation in both directions
+- OpenAI Responses -> Anthropic Messages translation
+- cross-protocol SSE translation for Chat Completions, Messages, and Responses portable semantics
 - strict compatibility errors instead of silently dropping unsupported fields
 - protocol-appropriate client authentication
 - liveness/readiness endpoints
 - graceful shutdown and structured logs
 
-Gemini, OAuth, persistence, the HTMX admin UI, OpenAI Responses translation, and realtime/WebSocket translation are staged as separate implementation slices.
+Gemini, OAuth, persistence, the HTMX admin UI, reasoning translation, and realtime/WebSocket translation are staged as separate implementation slices.
 
 ## OpenAI-compatible setup
 
@@ -86,21 +87,22 @@ export KOKEKOKKOR_MODEL_ROUTES_JSON='{
 }'
 ```
 
-For an OpenAI Chat Completions client, `via-anthropic` decodes the request into the canonical IR, encodes an Anthropic Messages request, calls the Anthropic target, then converts the response back into OpenAI format. An Anthropic Messages client can use an exact route whose target is OpenAI-compatible and the reverse translation is applied.
+For an OpenAI client, a route targeting Anthropic enters the canonical semantic layer only for operations with an explicit translator. Anthropic Messages clients may likewise route to OpenAI-compatible targets where a reverse translator exists.
 
 Same-protocol routes remain on the transparent reverse-proxy path. They are not decoded into the canonical IR merely because routing is enabled.
 
 ## Cross-protocol translation scope
 
-Current runtime translation supports both buffered and streaming forms of:
+Current runtime translation supports buffered and streaming forms of:
 
 ```text
 POST /v1/chat/completions  <->  POST /v1/messages
+POST /v1/responses         ->   POST /v1/messages
 ```
 
-Portable request/response mappings currently include text, supported image sources, function/tool definitions, tool calls, text tool results, sampling controls, stop sequences, model aliases, stop reasons, and portable usage fields.
+Portable request/response mappings include text, supported image sources, function/tool definitions, tool calls, text tool results, sampling controls, stop sequences, model aliases, stop reasons, and portable usage fields. Responses additionally supports portable `instructions`, Responses message/input items, function call/output items, and Responses-native output objects.
 
-For `stream: true`, the gateway translates incrementally:
+For translated `stream: true` requests, the gateway works incrementally:
 
 ```text
 upstream SSE
@@ -110,11 +112,11 @@ upstream SSE
   -> downstream client
 ```
 
-The stream pipeline handles text deltas, tool-call starts, incremental tool arguments, usage, finish/stop reasons, and protocol-native termination events. Same-protocol streams bypass this pipeline entirely and remain native byte streams.
+Chat/Messages streaming handles text deltas, tool-call starts, incremental tool arguments, usage, and protocol-native finish/stop events. Responses streaming emits Responses-native lifecycle events such as `response.created`, `response.output_item.added`, `response.output_text.delta`, `response.function_call_arguments.delta`, and `response.completed` or `response.incomplete`. Responses streams do not emit the Chat Completions `[DONE]` sentinel.
 
-Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, Anthropic thinking/reasoning streaming, OpenAI structured-output controls on the Anthropic path, Anthropic document blocks on the Chat Completions path, error-tagged Anthropic tool results, OpenAI reasoning-token usage when targeting Anthropic, and Anthropic cache-creation usage when targeting OpenAI.
+`stream_options.include_obfuscation` is honored on translated Responses streams. Same-protocol streams bypass the translation pipeline entirely and remain native byte streams.
 
-Anthropic-to-OpenAI streaming forces upstream OpenAI usage reporting so the gateway can construct Anthropic usage events. OpenAI only reports prompt-token usage at the end of a Chat Completions stream, so translated Anthropic `message_start` currently begins with zero usage and the final `message_delta` carries the complete usage once it becomes available. Native Anthropic streams are unaffected.
+Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, reasoning/thinking streams, Responses built-in tools, persisted conversation/background controls, structured-output controls, refusal translation, Anthropic document blocks on the Chat Completions path, and error-tagged Anthropic tool results.
 
 Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Once translated SSE bytes are emitted, the selected route is final. A parser failure before the first translated event is returned as a gateway translation error rather than an empty HTTP 200 response.
 
@@ -166,4 +168,4 @@ client
   -> client
 ```
 
-Native passthrough is the fidelity path. Cross-protocol translation only enters the canonical semantic layer when the selected target speaks a different protocol.
+Native passthrough is the fidelity path. Cross-protocol translation only enters the canonical semantic layer when the selected target speaks a different protocol and the operation has an explicit semantic adapter.
