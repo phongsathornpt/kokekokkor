@@ -11,9 +11,9 @@ import (
 type Config struct {
 	HTTP              HTTP
 	GatewayAPIKey     string
-	Providers          []OpenAICompatible
+	Providers         []OpenAICompatible
 	DefaultProviderID string
-	ModelRoutes        map[string]string
+	ModelRoutes       map[string]string
 }
 
 type HTTP struct {
@@ -31,7 +31,7 @@ func Load() (Config, error) {
 		HTTP:              HTTP{Addr: envOr("KOKEKOKKOR_ADDR", ":8080")},
 		GatewayAPIKey:     os.Getenv("KOKEKOKKOR_API_KEY"),
 		DefaultProviderID: os.Getenv("KOKEKOKKOR_DEFAULT_PROVIDER_ID"),
-		ModelRoutes:        make(map[string]string),
+		ModelRoutes:       make(map[string]string),
 	}
 
 	if raw := os.Getenv("KOKEKOKKOR_PROVIDERS_JSON"); raw != "" {
