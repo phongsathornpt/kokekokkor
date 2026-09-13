@@ -12,17 +12,33 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 )
 
-type geminiCrossProtocolTranslator interface {
+type geminiChatCrossProtocolTranslator interface {
 	OpenAIChatToGemini(context.Context, provider.Target, string, http.Header, []byte) (upstream.Response, error)
 }
 
+type geminiResponsesCrossProtocolTranslator interface {
+	OpenAIResponsesToGemini(context.Context, provider.Target, string, http.Header, []byte) (upstream.Response, error)
+}
+
 func (h *Handler) serveGeminiAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
-	translator, ok := h.translator.(geminiCrossProtocolTranslator)
-	if !ok {
-		return false, errors.New("Gemini cross-protocol translator is not configured")
-	}
-	if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+	if r.Method != http.MethodPost {
 		return h.unsupportedGeminiOperation(w, r, allowFallback)
+	}
+
+	switch r.URL.Path {
+	case "/v1/chat/completions":
+		return h.serveGeminiChatAttempt(w, r, body, attempt, allowFallback)
+	case "/v1/responses":
+		return h.serveGeminiResponsesAttempt(w, r, body, attempt, allowFallback)
+	default:
+		return h.unsupportedGeminiOperation(w, r, allowFallback)
+	}
+}
+
+func (h *Handler) serveGeminiChatAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
+	translator, ok := h.translator.(geminiChatCrossProtocolTranslator)
+	if !ok {
+		return false, errors.New("Gemini Chat cross-protocol translator is not configured")
 	}
 	stream, err := ChatRequestStreams(body)
 	if err != nil {
@@ -42,6 +58,35 @@ func (h *Handler) serveGeminiAttempt(w http.ResponseWriter, r *http.Request, bod
 	}
 
 	response, err := translator.OpenAIChatToGemini(r.Context(), attempt.Target, attempt.Model, r.Header, body)
+	if done, retryErr := handleCrossProtocolError(w, err, allowFallback); done || retryErr != nil {
+		return done, retryErr
+	}
+	return writeGeminiBufferedResponse(w, response, allowFallback)
+}
+
+func (h *Handler) serveGeminiResponsesAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
+	translator, ok := h.translator.(geminiResponsesCrossProtocolTranslator)
+	if !ok {
+		return false, errors.New("Gemini Responses cross-protocol translator is not configured")
+	}
+	stream, err := ResponsesRequestStreams(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return true, nil
+	}
+	if stream {
+		err := apptranslation.CompatibilityError{
+			Feature: "stream",
+			Reason:  "OpenAI Responses streaming to Gemini is implemented in a later slice",
+		}
+		if allowFallback {
+			return false, err
+		}
+		writeError(w, http.StatusBadRequest, "unsupported_feature", err.Error())
+		return true, nil
+	}
+
+	response, err := translator.OpenAIResponsesToGemini(r.Context(), attempt.Target, attempt.Model, r.Header, body)
 	if done, retryErr := handleCrossProtocolError(w, err, allowFallback); done || retryErr != nil {
 		return done, retryErr
 	}
