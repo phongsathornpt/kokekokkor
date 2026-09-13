@@ -16,8 +16,29 @@ type CredentialRepository struct {
 	keyring *secretbox.Keyring
 }
 
-func (s *Store) Credentials(keyring *secretbox.Keyring) *CredentialRepository {
-	return &CredentialRepository{db: s.db, keyring: keyring}
+func (s *Store) Credentials(ctx context.Context, keyring *secretbox.Keyring) (*CredentialRepository, error) {
+	if keyring == nil {
+		return nil, fmt.Errorf("credential keyring must not be nil")
+	}
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS credentials (
+			provider_id TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			key_version TEXT NOT NULL,
+			nonce BLOB NOT NULL,
+			ciphertext BLOB NOT NULL,
+			updated_at INTEGER NOT NULL,
+			PRIMARY KEY (provider_id, kind),
+			FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+		)`,
+		`INSERT OR IGNORE INTO schema_migrations(version) VALUES (2)`,
+	}
+	for _, statement := range statements {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			return nil, fmt.Errorf("migrate credential store: %w", err)
+		}
+	}
+	return &CredentialRepository{db: s.db, keyring: keyring}, nil
 }
 
 func (r *CredentialRepository) Get(ctx context.Context, ref credential.Ref) ([]byte, error) {
