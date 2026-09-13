@@ -70,7 +70,14 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	geminiUpstream := geminiProvider.New(logger)
 	geminiAPI := geminiProtocol.NewRoutedHandler(router, geminiTarget, geminiUpstream, crossProtocol)
 
-	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, logger)
+	oauthHandler, err := resolveOAuthHandler(context.Background(), cfg, catalogStore)
+	if err != nil {
+		if catalogStore != nil {
+			_ = catalogStore.Close()
+		}
+		return nil, err
+	}
+	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, oauthHandler, logger)
 	return &App{server: server.HTTP, logger: logger, catalogStore: catalogStore}, nil
 }
 
