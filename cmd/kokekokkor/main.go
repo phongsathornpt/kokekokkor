@@ -13,7 +13,11 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}))
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("configuration failed", "error", err)
+		os.Exit(1)
+	}
 
 	app, err := bootstrap.New(cfg, logger)
 	if err != nil {
