@@ -1,6 +1,7 @@
 package openaicompat
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -15,6 +16,14 @@ type Proxy struct {
 	logger    *slog.Logger
 	transport http.RoundTripper
 	proxies   sync.Map
+}
+
+type retryableStatusError struct {
+	statusCode int
+}
+
+func (e retryableStatusError) Error() string {
+	return fmt.Sprintf("retryable upstream status %d", e.statusCode)
 }
 
 func New(logger *slog.Logger) *Proxy {
@@ -32,15 +41,37 @@ func New(logger *slog.Logger) *Proxy {
 	}
 }
 
-func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provider.Target) {
+// ServeHTTPTo returns an error only when no upstream response has been
+// committed to w. When allowFallback is true, selected retryable upstream
+// statuses are intercepted before headers/body reach the client.
+func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provider.Target, allowFallback bool) error {
 	upstream, err := url.Parse(target.BaseURL)
 	if err != nil {
-		p.logger.Error("invalid routed upstream", "provider", target.ID, "error", err)
-		http.Error(w, "invalid upstream configuration", http.StatusBadGateway)
-		return
+		return fmt.Errorf("invalid routed upstream %q: %w", target.ID, err)
 	}
 
-	proxy := p.reverseProxy(upstream)
+	base := p.reverseProxy(upstream)
+	proxy := *base
+	var forwardErr error
+
+	if allowFallback {
+		proxy.ModifyResponse = func(response *http.Response) error {
+			if retryableStatus(response.StatusCode) {
+				return retryableStatusError{statusCode: response.StatusCode}
+			}
+			return nil
+		}
+	}
+	proxy.ErrorHandler = func(_ http.ResponseWriter, request *http.Request, err error) {
+		forwardErr = err
+		p.logger.Warn("upstream attempt failed",
+			"provider", target.ID,
+			"error", err,
+			"method", request.Method,
+			"path", request.URL.Path,
+		)
+	}
+
 	req := r.Clone(r.Context())
 	req.Header = r.Header.Clone()
 	req.Header.Del("Authorization")
@@ -49,6 +80,7 @@ func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provi
 		req.Header.Set("Authorization", "Bearer "+target.APIKey)
 	}
 	proxy.ServeHTTP(w, req)
+	return forwardErr
 }
 
 func (p *Proxy) reverseProxy(target *url.URL) *httputil.ReverseProxy {
@@ -64,12 +96,22 @@ func (p *Proxy) reverseProxy(target *url.URL) *httputil.ReverseProxy {
 		},
 		Transport:     p.transport,
 		FlushInterval: -1,
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			p.logger.Warn("upstream request failed", "error", err, "method", r.Method, "path", r.URL.Path)
-			http.Error(w, "upstream request failed", http.StatusBadGateway)
-		},
 	}
 
 	actual, _ := p.proxies.LoadOrStore(key, proxy)
 	return actual.(*httputil.ReverseProxy)
+}
+
+func retryableStatus(status int) bool {
+	switch status {
+	case http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+		529: // Some LLM providers use 529 for overloaded capacity.
+		return true
+	default:
+		return false
+	}
 }
