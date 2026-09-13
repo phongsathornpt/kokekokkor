@@ -1,0 +1,90 @@
+package openai
+
+import "encoding/json"
+
+type responsesRequest struct {
+	Model             string          `json:"model"`
+	Instructions      json.RawMessage `json:"instructions,omitempty"`
+	Input             json.RawMessage `json:"input,omitempty"`
+	Tools             []responseTool  `json:"tools,omitempty"`
+	ToolChoice        json.RawMessage `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool           `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens   *int            `json:"max_output_tokens,omitempty"`
+	Temperature       *float64        `json:"temperature,omitempty"`
+	TopP              *float64        `json:"top_p,omitempty"`
+	Stream            bool            `json:"stream,omitempty"`
+}
+
+type responseInputItem struct {
+	Type      string          `json:"type,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	Content   json.RawMessage `json:"content,omitempty"`
+	CallID    string          `json:"call_id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Arguments string          `json:"arguments,omitempty"`
+	Output    json.RawMessage `json:"output,omitempty"`
+}
+
+type responseContentPart struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+	FileID   string `json:"file_id,omitempty"`
+	Detail   string `json:"detail,omitempty"`
+}
+
+type responseTool struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Strict      bool            `json:"strict,omitempty"`
+}
+
+type responseObject struct {
+	ID                string               `json:"id"`
+	Object            string               `json:"object"`
+	CreatedAt         int64                `json:"created_at"`
+	CompletedAt       int64                `json:"completed_at,omitempty"`
+	Status            string               `json:"status"`
+	Error             any                  `json:"error"`
+	IncompleteDetails any                  `json:"incomplete_details"`
+	Model             string               `json:"model"`
+	Output            []responseOutputItem `json:"output"`
+	OutputText        string               `json:"output_text,omitempty"`
+	Usage             responseUsage        `json:"usage"`
+}
+
+type responseOutputItem struct {
+	ID        string               `json:"id"`
+	Type      string               `json:"type"`
+	Status    string               `json:"status,omitempty"`
+	Role      string               `json:"role,omitempty"`
+	Content   []responseOutputPart `json:"content,omitempty"`
+	CallID    string               `json:"call_id,omitempty"`
+	Name      string               `json:"name,omitempty"`
+	Arguments string               `json:"arguments,omitempty"`
+}
+
+type responseOutputPart struct {
+	Type        string `json:"type"`
+	Text        string `json:"text,omitempty"`
+	Annotations []any  `json:"annotations,omitempty"`
+}
+
+type responseUsage struct {
+	InputTokens        int64                      `json:"input_tokens"`
+	InputTokensDetails responseInputTokenDetails  `json:"input_tokens_details"`
+	OutputTokens       int64                      `json:"output_tokens"`
+	OutputTokensDetail responseOutputTokenDetails `json:"output_tokens_details"`
+	TotalTokens        int64                      `json:"total_tokens"`
+}
+
+type responseInputTokenDetails struct {
+	CachedTokens     int64 `json:"cached_tokens,omitempty"`
+	CacheWriteTokens int64 `json:"cache_write_tokens,omitempty"`
+}
+
+type responseOutputTokenDetails struct {
+	ReasoningTokens int64 `json:"reasoning_tokens,omitempty"`
+}

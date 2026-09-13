@@ -18,24 +18,28 @@ const maxTranslatedStreamErrorBytes = 1 << 20
 type CrossProtocolTranslator interface {
 	OpenAIChatToAnthropic(context.Context, provider.Target, string, http.Header, []byte) (upstream.Response, error)
 	OpenAIChatToAnthropicStream(context.Context, provider.Target, string, http.Header, []byte) (upstream.StreamResponse, error)
+	OpenAIResponsesToAnthropic(context.Context, provider.Target, string, http.Header, []byte) (upstream.Response, error)
 }
 
 func (h *Handler) serveAnthropicAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
-	if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
-		err := apptranslation.CompatibilityError{
-			Feature: "operation",
-			Reason:  fmt.Sprintf("OpenAI operation %s %s has no Anthropic translation yet", r.Method, r.URL.Path),
-		}
-		if allowFallback {
-			return false, err
-		}
-		writeError(w, http.StatusBadRequest, "unsupported_feature", err.Error())
-		return true, nil
-	}
 	if h.translator == nil {
 		return false, errors.New("cross-protocol translator is not configured")
 	}
+	if r.Method != http.MethodPost {
+		return h.unsupportedAnthropicOperation(w, r, allowFallback)
+	}
 
+	switch r.URL.Path {
+	case "/v1/chat/completions":
+		return h.serveAnthropicChatAttempt(w, r, body, attempt, allowFallback)
+	case "/v1/responses":
+		return h.serveAnthropicResponsesAttempt(w, r, body, attempt, allowFallback)
+	default:
+		return h.unsupportedAnthropicOperation(w, r, allowFallback)
+	}
+}
+
+func (h *Handler) serveAnthropicChatAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
 	stream, err := ChatRequestStreams(body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
@@ -47,12 +51,52 @@ func (h *Handler) serveAnthropicAttempt(w http.ResponseWriter, r *http.Request, 
 	return h.serveAnthropicBufferedAttempt(w, r, body, attempt, allowFallback)
 }
 
+func (h *Handler) serveAnthropicResponsesAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
+	stream, err := ResponsesRequestStreams(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return true, nil
+	}
+	if stream {
+		err := apptranslation.CompatibilityError{
+			Feature: "stream",
+			Reason:  "Responses streaming translation is implemented in a later slice",
+		}
+		if allowFallback {
+			return false, err
+		}
+		writeError(w, http.StatusBadRequest, "unsupported_feature", err.Error())
+		return true, nil
+	}
+
+	response, err := h.translator.OpenAIResponsesToAnthropic(r.Context(), attempt.Target, attempt.Model, r.Header, body)
+	if done, retryErr := handleCrossProtocolError(w, err, allowFallback); done || retryErr != nil {
+		return done, retryErr
+	}
+	return writeAnthropicBufferedResponse(w, response, allowFallback)
+}
+
+func (h *Handler) unsupportedAnthropicOperation(w http.ResponseWriter, r *http.Request, allowFallback bool) (bool, error) {
+	err := apptranslation.CompatibilityError{
+		Feature: "operation",
+		Reason:  fmt.Sprintf("OpenAI operation %s %s has no Anthropic translation yet", r.Method, r.URL.Path),
+	}
+	if allowFallback {
+		return false, err
+	}
+	writeError(w, http.StatusBadRequest, "unsupported_feature", err.Error())
+	return true, nil
+}
+
 func (h *Handler) serveAnthropicBufferedAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
 	response, err := h.translator.OpenAIChatToAnthropic(r.Context(), attempt.Target, attempt.Model, r.Header, body)
 	if done, retryErr := handleCrossProtocolError(w, err, allowFallback); done || retryErr != nil {
 		return done, retryErr
 	}
+	return writeAnthropicBufferedResponse(w, response, allowFallback)
+}
 
+func writeAnthropicBufferedResponse(w http.ResponseWriter, response upstream.Response, allowFallback bool) (bool, error) {
 	if upstream.RetryableStatus(response.StatusCode) && allowFallback {
 		return false, fmt.Errorf("retryable Anthropic upstream status %d", response.StatusCode)
 	}
