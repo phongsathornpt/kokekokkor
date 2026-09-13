@@ -105,6 +105,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
+		case provider.ProtocolGemini:
+			done, attemptErr := h.serveGeminiAttempt(w, r, body, attempt, allowFallback)
+			if done {
+				return
+			}
+			if attemptErr != nil {
+				lastErr = attemptErr
+				continue
+			}
+
 		default:
 			lastErr = fmt.Errorf("unsupported upstream protocol %q", attempt.Target.Protocol)
 		}
