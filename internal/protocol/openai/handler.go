@@ -26,6 +26,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	target, err := h.router.Resolve(r.Context(), routing.Request{
 		Protocol:  "openai",
 		Operation: r.URL.Path,
+		Model:     requestModel(r),
 	})
 	if err != nil {
 		status := http.StatusBadGateway
