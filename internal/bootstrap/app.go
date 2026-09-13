@@ -10,7 +10,6 @@ import (
 
 	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
 	"github.com/phongsathornpt/kokekokkor/internal/config"
-	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 	anthropicProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/anthropic"
 	geminiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/gemini"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
@@ -22,9 +21,14 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/transport/upstreamhttp"
 )
 
+type closer interface {
+	Close() error
+}
+
 type App struct {
-	server *http.Server
-	logger *slog.Logger
+	server       *http.Server
+	logger       *slog.Logger
+	catalogStore closer
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
@@ -32,66 +36,27 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	targets := make([]provider.Target, 0, len(cfg.Providers)+2)
-	for _, configured := range cfg.Providers {
-		targets = append(targets, provider.Target{
-			ID:       configured.ID,
-			Protocol: provider.ProtocolOpenAI,
-			BaseURL:  configured.BaseURL,
-			APIKey:   configured.APIKey,
-		})
-	}
-
-	var anthropicTarget *provider.Target
-	if cfg.Anthropic.BaseURL != "" {
-		target := provider.Target{
-			ID:       cfg.Anthropic.ID,
-			Protocol: provider.ProtocolAnthropic,
-			BaseURL:  cfg.Anthropic.BaseURL,
-			APIKey:   cfg.Anthropic.APIKey,
-		}
-		anthropicTarget = &target
-		targets = append(targets, target)
-	}
-
-	var geminiTarget *provider.Target
-	if cfg.Gemini.BaseURL != "" {
-		target := provider.Target{
-			ID:       cfg.Gemini.ID,
-			Protocol: provider.ProtocolGemini,
-			BaseURL:  cfg.Gemini.BaseURL,
-			APIKey:   cfg.Gemini.APIKey,
-		}
-		geminiTarget = &target
-		targets = append(targets, target)
-	}
-
-	modelRoutes := make(map[string][]routing.RouteTarget, len(cfg.ModelRoutes))
-	for model, configuredTargets := range cfg.ModelRoutes {
-		routeTargets := make([]routing.RouteTarget, 0, len(configuredTargets))
-		for _, configuredTarget := range configuredTargets {
-			routeTargets = append(routeTargets, routing.RouteTarget{
-				ProviderID: configuredTarget.ProviderID,
-				Model:      configuredTarget.Model,
-			})
-		}
-		modelRoutes[model] = routeTargets
-	}
-
-	defaults := make(map[provider.Protocol]string, 3)
-	if cfg.DefaultProviderID != "" {
-		defaults[provider.ProtocolOpenAI] = cfg.DefaultProviderID
-	}
-	if anthropicTarget != nil {
-		defaults[provider.ProtocolAnthropic] = anthropicTarget.ID
-	}
-	if geminiTarget != nil {
-		defaults[provider.ProtocolGemini] = geminiTarget.ID
-	}
-	router, err := routing.NewProtocolTable(targets, defaults, modelRoutes)
+	snapshot, catalogStore, err := resolveCatalog(context.Background(), cfg)
 	if err != nil {
 		return nil, err
 	}
+	if err := snapshot.Validate(); err != nil {
+		if catalogStore != nil {
+			_ = catalogStore.Close()
+		}
+		return nil, err
+	}
+	targets, defaults, modelRoutes := routingInputs(snapshot, cfg)
+	router, err := routing.NewProtocolTable(targets, defaults, modelRoutes)
+	if err != nil {
+		if catalogStore != nil {
+			_ = catalogStore.Close()
+		}
+		return nil, err
+	}
+
+	anthropicTarget := protocolDefaultTarget(targets, defaults, "anthropic")
+	geminiTarget := protocolDefaultTarget(targets, defaults, "gemini")
 
 	bufferedUpstream := upstreamhttp.New(cfg.Anthropic.Version)
 	crossProtocol := translator.New(bufferedUpstream)
@@ -106,10 +71,16 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	geminiAPI := geminiProtocol.NewRoutedHandler(router, geminiTarget, geminiUpstream, crossProtocol)
 
 	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, logger)
-	return &App{server: server.HTTP, logger: logger}, nil
+	return &App{server: server.HTTP, logger: logger, catalogStore: catalogStore}, nil
 }
 
-func (a *App) Run(ctx context.Context) error {
+func (a *App) Run(ctx context.Context) (err error) {
+	defer func() {
+		if closeErr := a.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
+
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", a.server.Addr)
 	if err != nil {
 		return err
@@ -135,4 +106,13 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		return nil
 	}
+}
+
+func (a *App) Close() error {
+	if a == nil || a.catalogStore == nil {
+		return nil
+	}
+	err := a.catalogStore.Close()
+	a.catalogStore = nil
+	return err
 }
