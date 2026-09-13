@@ -47,7 +47,7 @@ func GeminiProfile(options ProfileOptions) (domainoauth.Provider, error) {
 			"https://www.googleapis.com/auth/generative-language.retriever",
 		},
 		AuthorizationParams: map[string]string{
-			"access_type":             "offline",
+			"access_type":            "offline",
 			"include_granted_scopes": "true",
 			"prompt":                  "consent",
 		},
