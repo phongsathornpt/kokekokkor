@@ -2,13 +2,14 @@ package upstream
 
 import (
 	"context"
+	"io"
 	"net/http"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 )
 
-// Request is used only by translated, non-streaming calls. Native passthrough
-// continues to use the reverse-proxy fast path.
+// Request is used by translated calls. Native passthrough continues to use
+// the reverse-proxy fast path.
 type Request struct {
 	Method   string
 	Path     string
@@ -23,8 +24,15 @@ type Response struct {
 	Body       []byte
 }
 
+type StreamResponse struct {
+	StatusCode int
+	Header     http.Header
+	Body       io.ReadCloser
+}
+
 type Client interface {
 	Do(context.Context, provider.Target, Request) (Response, error)
+	Stream(context.Context, provider.Target, Request) (StreamResponse, error)
 }
 
 func RetryableStatus(status int) bool {
