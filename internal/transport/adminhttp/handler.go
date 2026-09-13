@@ -39,7 +39,7 @@ type CredentialEditor interface {
 type staticCredentialStatus map[string]bool
 
 func (s staticCredentialStatus) HasAPIKey(providerID string) bool { return s[providerID] }
-func (staticCredentialStatus) Editable() bool                    { return false }
+func (staticCredentialStatus) Editable() bool                     { return false }
 func (staticCredentialStatus) SetAPIKey(context.Context, string, string) error {
 	return fmt.Errorf("credential editing is not configured")
 }
