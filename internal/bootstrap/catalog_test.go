@@ -58,21 +58,17 @@ func TestResolveCatalogSeedsThenPrefersPersistence(t *testing.T) {
 }
 
 func TestRoutingInputsKeepSecretsOutOfCatalog(t *testing.T) {
-	cfg := config.Config{
-		Providers: []config.OpenAICompatible{{ID: "openai", BaseURL: "https://env.example", APIKey: "env-secret"}},
-		Anthropic: config.Anthropic{ID: "anthropic", APIKey: "anthropic-secret", Version: "2023-06-01"},
-		Gemini:    config.Gemini{ID: "gemini", APIKey: "gemini-secret"},
-	}
 	snapshot := domaincatalog.Snapshot{
 		Providers: []domaincatalog.Provider{{ID: "openai", Protocol: provider.ProtocolOpenAI, BaseURL: "https://persisted.example", Enabled: true}},
 		Defaults:  map[provider.Protocol]string{provider.ProtocolOpenAI: "openai"},
 		Routes:    map[string][]domaincatalog.RouteTarget{"portable": {{ProviderID: "openai", Model: "gpt-upstream"}}},
 	}
-	targets, defaults, routes := routingInputs(snapshot, cfg)
+	credentials := map[string]string{"openai": "resolved-secret"}
+	targets, defaults, routes := routingInputs(snapshot, credentials)
 	if len(targets) != 1 {
 		t.Fatalf("targets = %#v", targets)
 	}
-	if targets[0].BaseURL != "https://persisted.example" || targets[0].APIKey != "env-secret" {
+	if targets[0].BaseURL != "https://persisted.example" || targets[0].APIKey != "resolved-secret" {
 		t.Fatalf("target = %#v", targets[0])
 	}
 	if defaults[provider.ProtocolOpenAI] != "openai" || routes["portable"][0].Model != "gpt-upstream" {
