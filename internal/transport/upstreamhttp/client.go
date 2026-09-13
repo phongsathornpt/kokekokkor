@@ -122,6 +122,10 @@ func applyCredentials(header http.Header, target provider.Target, defaultAnthrop
 		if header.Get("Anthropic-Version") == "" && defaultAnthropicVersion != "" {
 			header.Set("Anthropic-Version", defaultAnthropicVersion)
 		}
+	case provider.ProtocolGemini:
+		if target.APIKey != "" {
+			header.Set("X-Goog-Api-Key", target.APIKey)
+		}
 	case provider.ProtocolOpenAI:
 		if target.APIKey != "" {
 			header.Set("Authorization", "Bearer "+target.APIKey)
