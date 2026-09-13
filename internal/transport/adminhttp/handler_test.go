@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -33,6 +34,28 @@ func (f *fakeTokens) Delete(_ context.Context, providerID string) error {
 	}
 	delete(f.values, providerID)
 	f.deleted = providerID
+	return nil
+}
+
+type fakeCredentials struct {
+	values   map[string]string
+	editable bool
+}
+
+func (f *fakeCredentials) HasAPIKey(providerID string) bool { return f.values[providerID] != "" }
+func (f *fakeCredentials) Editable() bool                   { return f.editable }
+func (f *fakeCredentials) SetAPIKey(_ context.Context, providerID, value string) error {
+	if !f.editable {
+		return errors.New("read only")
+	}
+	f.values[providerID] = value
+	return nil
+}
+func (f *fakeCredentials) DeleteAPIKey(_ context.Context, providerID string) error {
+	if !f.editable {
+		return errors.New("read only")
+	}
+	delete(f.values, providerID)
 	return nil
 }
 
@@ -83,5 +106,42 @@ func TestAdminDisconnectsOAuth(t *testing.T) {
 	}
 	if rec.Header().Get("HX-Refresh") != "true" {
 		t.Fatalf("HX-Refresh = %q", rec.Header().Get("HX-Refresh"))
+	}
+}
+
+func TestAdminUpdatesAndDeletesEncryptedAPIKey(t *testing.T) {
+	credentials := &fakeCredentials{values: map[string]string{}, editable: true}
+	handler, err := NewManageable(testSnapshot(), nil, credentials, nil, nil)
+	if err != nil {
+		t.Fatalf("NewManageable() error = %v", err)
+	}
+
+	form := url.Values{"provider_id": {"gemini"}, "api_key": {"new-secret"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/credentials/api-key", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || credentials.values["gemini"] != "new-secret" {
+		t.Fatalf("set status=%d values=%#v", rec.Code, credentials.values)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if !strings.Contains(body, "configured") || !strings.Contains(body, "Save key") {
+		t.Fatalf("body missing credential controls: %s", body)
+	}
+	if strings.Contains(body, "new-secret") {
+		t.Fatal("admin page leaked API key")
+	}
+
+	form = url.Values{"provider_id": {"gemini"}}
+	req = httptest.NewRequest(http.MethodPost, "/admin/credentials/api-key/delete", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || credentials.HasAPIKey("gemini") {
+		t.Fatalf("delete status=%d values=%#v", rec.Code, credentials.values)
 	}
 }
