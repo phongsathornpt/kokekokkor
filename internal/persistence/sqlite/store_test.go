@@ -23,6 +23,10 @@ func TestStoreReplaceAndLoad(t *testing.T) {
 			{ID: "anthropic", Protocol: provider.ProtocolAnthropic, BaseURL: "https://api.anthropic.com", Enabled: true},
 			{ID: "gemini", Protocol: provider.ProtocolGemini, BaseURL: "https://generativelanguage.googleapis.com", Enabled: true},
 		},
+		Defaults: map[provider.Protocol]string{
+			provider.ProtocolAnthropic: "anthropic",
+			provider.ProtocolGemini:    "gemini",
+		},
 		Routes: map[string][]domaincatalog.RouteTarget{
 			"portable": {
 				{ProviderID: "gemini", Model: "gemini-upstream"},
@@ -52,14 +56,16 @@ func TestStoreReplaceIsAtomicOnValidationError(t *testing.T) {
 
 	initial := domaincatalog.Snapshot{
 		Providers: []domaincatalog.Provider{{ID: "gemini", Protocol: provider.ProtocolGemini, BaseURL: "https://generativelanguage.googleapis.com", Enabled: true}},
-		Routes: map[string][]domaincatalog.RouteTarget{"portable": {{ProviderID: "gemini"}}},
+		Defaults:  map[provider.Protocol]string{provider.ProtocolGemini: "gemini"},
+		Routes:    map[string][]domaincatalog.RouteTarget{"portable": {{ProviderID: "gemini"}}},
 	}
 	if err := store.Replace(ctx, initial); err != nil {
 		t.Fatalf("Replace(initial) error = %v", err)
 	}
 	invalid := domaincatalog.Snapshot{
 		Providers: []domaincatalog.Provider{{ID: "gemini", Protocol: provider.ProtocolGemini, BaseURL: "https://generativelanguage.googleapis.com", Enabled: true}},
-		Routes: map[string][]domaincatalog.RouteTarget{"portable": {{ProviderID: "missing"}}},
+		Defaults:  map[provider.Protocol]string{provider.ProtocolGemini: "gemini"},
+		Routes:    map[string][]domaincatalog.RouteTarget{"portable": {{ProviderID: "missing"}}},
 	}
 	if err := store.Replace(ctx, invalid); err == nil {
 		t.Fatal("Replace(invalid) error = nil, want validation error")
@@ -88,7 +94,11 @@ func TestStoreMigrationsAreIdempotent(t *testing.T) {
 		t.Fatalf("second Open() error = %v", err)
 	}
 	defer second.Close()
-	if _, err := second.Load(ctx); err != nil {
+	got, err := second.Load(ctx)
+	if err != nil {
 		t.Fatalf("Load() after repeated migration error = %v", err)
+	}
+	if len(got.Providers) != 0 || len(got.Defaults) != 0 || len(got.Routes) != 0 {
+		t.Fatalf("new catalog is not empty: %#v", got)
 	}
 }
