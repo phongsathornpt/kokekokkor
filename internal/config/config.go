@@ -24,7 +24,7 @@ type OpenAICompatible struct {
 
 func Load() Config {
 	return Config{
-		HTTP: HTTP{Addr: envOr("KOKEKOKKOR_ADDR", ":8080")},
+		HTTP:          HTTP{Addr: envOr("KOKEKOKKOR_ADDR", ":8080")},
 		GatewayAPIKey: os.Getenv("KOKEKOKKOR_API_KEY"),
 		OpenAICompatible: OpenAICompatible{
 			ID:      envOr("KOKEKOKKOR_OPENAI_PROVIDER_ID", "default"),
