@@ -103,7 +103,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	anthropicAPI := anthropicProtocol.NewRoutedHandler(router, anthropicTarget, anthropicUpstream, crossProtocol)
 
 	geminiUpstream := geminiProvider.New(logger)
-	geminiAPI := geminiProtocol.NewRoutedHandler(router, geminiTarget, geminiUpstream)
+	geminiAPI := geminiProtocol.NewRoutedHandler(router, geminiTarget, geminiUpstream, crossProtocol)
 
 	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, logger)
 	return &App{server: server.HTTP, logger: logger}, nil
