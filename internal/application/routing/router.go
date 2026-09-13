@@ -15,10 +15,11 @@ var (
 	ErrDuplicateProvider = errors.New("duplicate provider ID")
 	ErrUnknownProvider   = errors.New("route references unknown provider")
 	ErrInvalidRoute      = errors.New("invalid model route")
+	ErrInvalidProtocol   = errors.New("invalid provider protocol")
 )
 
 type Request struct {
-	Protocol  string
+	Protocol  provider.Protocol
 	Operation string
 	Model     string
 }
@@ -43,9 +44,9 @@ type Router interface {
 }
 
 type snapshot struct {
-	providers         map[string]provider.Target
-	modelRoutes       map[string][]RouteTarget
-	defaultProviderID string
+	providers          map[string]provider.Target
+	modelRoutes        map[string][]RouteTarget
+	defaultProviderIDs map[provider.Protocol]string
 }
 
 // Table is a lock-free read router. Replace builds a complete immutable
@@ -55,16 +56,34 @@ type Table struct {
 	snapshot atomic.Pointer[snapshot]
 }
 
+// NewTable preserves the original OpenAI-compatible default-provider API.
 func NewTable(targets []provider.Target, defaultProviderID string, modelRoutes map[string][]RouteTarget) (*Table, error) {
+	defaults := make(map[provider.Protocol]string, 1)
+	if defaultProviderID != "" {
+		defaults[provider.ProtocolOpenAI] = defaultProviderID
+	}
+	return NewProtocolTable(targets, defaults, modelRoutes)
+}
+
+func NewProtocolTable(targets []provider.Target, defaultProviderIDs map[provider.Protocol]string, modelRoutes map[string][]RouteTarget) (*Table, error) {
 	router := &Table{}
-	if err := router.Replace(targets, defaultProviderID, modelRoutes); err != nil {
+	if err := router.ReplaceProtocols(targets, defaultProviderIDs, modelRoutes); err != nil {
 		return nil, err
 	}
 	return router, nil
 }
 
+// Replace preserves the original OpenAI-compatible default-provider API.
 func (r *Table) Replace(targets []provider.Target, defaultProviderID string, modelRoutes map[string][]RouteTarget) error {
-	next, err := buildSnapshot(targets, defaultProviderID, modelRoutes)
+	defaults := make(map[provider.Protocol]string, 1)
+	if defaultProviderID != "" {
+		defaults[provider.ProtocolOpenAI] = defaultProviderID
+	}
+	return r.ReplaceProtocols(targets, defaults, modelRoutes)
+}
+
+func (r *Table) ReplaceProtocols(targets []provider.Target, defaultProviderIDs map[provider.Protocol]string, modelRoutes map[string][]RouteTarget) error {
+	next, err := buildSnapshot(targets, defaultProviderIDs, modelRoutes)
 	if err != nil {
 		return err
 	}
@@ -96,12 +115,17 @@ func (r *Table) Resolve(_ context.Context, request Request) (Plan, error) {
 		}
 	}
 
-	if current.defaultProviderID == "" {
+	protocol := request.Protocol
+	if protocol == "" {
+		protocol = provider.ProtocolOpenAI
+	}
+	defaultProviderID := current.defaultProviderIDs[protocol]
+	if defaultProviderID == "" {
 		return Plan{}, ErrNoRoute
 	}
-	target, ok := current.providers[current.defaultProviderID]
+	target, ok := current.providers[defaultProviderID]
 	if !ok {
-		return Plan{}, fmt.Errorf("%w: %s", ErrUnknownProvider, current.defaultProviderID)
+		return Plan{}, fmt.Errorf("%w: %s", ErrUnknownProvider, defaultProviderID)
 	}
 	return Plan{
 		RequestedModel: request.Model,
@@ -117,10 +141,10 @@ func (r *Table) Ready() bool {
 	if current == nil || len(current.providers) == 0 {
 		return false
 	}
-	return current.defaultProviderID != "" || len(current.modelRoutes) != 0
+	return len(current.defaultProviderIDs) != 0 || len(current.modelRoutes) != 0
 }
 
-func buildSnapshot(targets []provider.Target, defaultProviderID string, modelRoutes map[string][]RouteTarget) (*snapshot, error) {
+func buildSnapshot(targets []provider.Target, defaultProviderIDs map[provider.Protocol]string, modelRoutes map[string][]RouteTarget) (*snapshot, error) {
 	providers := make(map[string]provider.Target, len(targets))
 	for _, target := range targets {
 		if target.ID == "" {
@@ -129,13 +153,33 @@ func buildSnapshot(targets []provider.Target, defaultProviderID string, modelRou
 		if _, exists := providers[target.ID]; exists {
 			return nil, fmt.Errorf("%w: %s", ErrDuplicateProvider, target.ID)
 		}
+		target.Protocol = target.EffectiveProtocol()
+		switch target.Protocol {
+		case provider.ProtocolOpenAI, provider.ProtocolAnthropic:
+		default:
+			return nil, fmt.Errorf("%w: %q", ErrInvalidProtocol, target.Protocol)
+		}
 		providers[target.ID] = target
 	}
 
-	if defaultProviderID != "" {
-		if _, ok := providers[defaultProviderID]; !ok {
-			return nil, fmt.Errorf("%w: %s", ErrUnknownProvider, defaultProviderID)
+	defaults := make(map[provider.Protocol]string, len(defaultProviderIDs))
+	for protocol, providerID := range defaultProviderIDs {
+		if providerID == "" {
+			continue
 		}
+		switch protocol {
+		case provider.ProtocolOpenAI, provider.ProtocolAnthropic:
+		default:
+			return nil, fmt.Errorf("%w: %q", ErrInvalidProtocol, protocol)
+		}
+		target, ok := providers[providerID]
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", ErrUnknownProvider, providerID)
+		}
+		if target.Protocol != protocol {
+			return nil, fmt.Errorf("%w: default %s provider %q speaks %s", ErrInvalidProtocol, protocol, providerID, target.Protocol)
+		}
+		defaults[protocol] = providerID
 	}
 
 	routes := make(map[string][]RouteTarget, len(modelRoutes))
@@ -161,8 +205,8 @@ func buildSnapshot(targets []provider.Target, defaultProviderID string, modelRou
 	}
 
 	return &snapshot{
-		providers:         providers,
-		modelRoutes:       routes,
-		defaultProviderID: defaultProviderID,
+		providers:          providers,
+		modelRoutes:        routes,
+		defaultProviderIDs: defaults,
 	}, nil
 }

@@ -1,7 +1,7 @@
 package anthropic
 
 import (
-	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 )
 
@@ -17,6 +18,14 @@ type Proxy struct {
 	transport      http.RoundTripper
 	defaultVersion string
 	proxies        sync.Map
+}
+
+type retryableStatusError struct {
+	statusCode int
+}
+
+func (e retryableStatusError) Error() string {
+	return fmt.Sprintf("retryable Anthropic upstream status %d", e.statusCode)
 }
 
 func New(logger *slog.Logger, defaultVersion string) *Proxy {
@@ -35,12 +44,33 @@ func New(logger *slog.Logger, defaultVersion string) *Proxy {
 	}
 }
 
-func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provider.Target) {
-	upstream, err := url.Parse(target.BaseURL)
+// ServeHTTPTo returns an error only while no response has been committed. A
+// non-final attempt can intercept retryable statuses so routing may continue.
+func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provider.Target, allowFallback bool) error {
+	upstreamURL, err := url.Parse(target.BaseURL)
 	if err != nil {
-		p.logger.Error("invalid Anthropic upstream", "provider", target.ID, "error", err)
-		writeProxyError(w, http.StatusBadGateway, "invalid upstream configuration")
-		return
+		return fmt.Errorf("invalid Anthropic upstream %q: %w", target.ID, err)
+	}
+
+	base := p.reverseProxy(upstreamURL)
+	proxy := *base
+	var forwardErr error
+	if allowFallback {
+		proxy.ModifyResponse = func(response *http.Response) error {
+			if upstream.RetryableStatus(response.StatusCode) {
+				return retryableStatusError{statusCode: response.StatusCode}
+			}
+			return nil
+		}
+	}
+	proxy.ErrorHandler = func(_ http.ResponseWriter, request *http.Request, err error) {
+		forwardErr = err
+		p.logger.Warn("Anthropic upstream attempt failed",
+			"provider", target.ID,
+			"error", err,
+			"method", request.Method,
+			"path", request.URL.Path,
+		)
 	}
 
 	req := r.Clone(r.Context())
@@ -55,7 +85,8 @@ func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provi
 		req.Header.Set("Anthropic-Version", p.defaultVersion)
 	}
 
-	p.reverseProxy(upstream).ServeHTTP(w, req)
+	proxy.ServeHTTP(w, req)
+	return forwardErr
 }
 
 func (p *Proxy) reverseProxy(target *url.URL) *httputil.ReverseProxy {
@@ -71,24 +102,8 @@ func (p *Proxy) reverseProxy(target *url.URL) *httputil.ReverseProxy {
 		},
 		Transport:     p.transport,
 		FlushInterval: -1,
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			p.logger.Warn("Anthropic upstream request failed", "error", err, "method", r.Method, "path", r.URL.Path)
-			writeProxyError(w, http.StatusBadGateway, "upstream request failed")
-		},
 	}
 
 	actual, _ := p.proxies.LoadOrStore(key, proxy)
 	return actual.(*httputil.ReverseProxy)
-}
-
-func writeProxyError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type": "error",
-		"error": map[string]any{
-			"type":    "api_error",
-			"message": message,
-		},
-	})
 }
