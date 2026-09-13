@@ -25,16 +25,17 @@ func (f *boundaryForwarder) ServeHTTPTo(w http.ResponseWriter, _ *http.Request, 
 	return nil
 }
 
-func TestHandlerRejectsUnsupportedCrossProtocolBeforeUpstream(t *testing.T) {
+func TestHandlerRejectsUnsupportedCrossProtocolOperationBeforeUpstream(t *testing.T) {
 	forwarder := &boundaryForwarder{}
+	translator := &openAITranslatorStub{}
 	handler := NewRoutedHandler(boundaryRouter{plan: routing.Plan{
 		RequestedModel: "portable",
 		Attempts: []routing.Attempt{{
 			Target: provider.Target{ID: "openai", Protocol: provider.ProtocolOpenAI},
 			Model:  "gpt-upstream",
 		}},
-	}}, nil, forwarder)
-	req := httptest.NewRequest(http.MethodPost, "http://gateway/v1beta/models/portable:generateContent", strings.NewReader(`{"contents":[]}`))
+	}}, nil, forwarder, translator)
+	req := httptest.NewRequest(http.MethodPost, "http://gateway/v1beta/models/portable:countTokens", strings.NewReader(`{"contents":[]}`))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -42,5 +43,8 @@ func TestHandlerRejectsUnsupportedCrossProtocolBeforeUpstream(t *testing.T) {
 	}
 	if forwarder.calls != 0 {
 		t.Fatalf("upstream calls=%d", forwarder.calls)
+	}
+	if translator.called {
+		t.Fatal("translator called for unsupported operation")
 	}
 }
