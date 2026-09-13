@@ -21,9 +21,7 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/transport/upstreamhttp"
 )
 
-type closer interface {
-	Close() error
-}
+type closer interface{ Close() error }
 
 type App struct {
 	server       *http.Server
@@ -35,7 +33,6 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-
 	snapshot, catalogStore, err := resolveCatalog(context.Background(), cfg)
 	if err != nil {
 		return nil, err
@@ -55,10 +52,18 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
+	oauth, err := resolveOAuthRuntime(context.Background(), cfg, catalogStore)
+	if err != nil {
+		if catalogStore != nil {
+			_ = catalogStore.Close()
+		}
+		return nil, err
+	}
+
 	anthropicTarget := protocolDefaultTarget(targets, defaults, "anthropic")
 	geminiTarget := protocolDefaultTarget(targets, defaults, "gemini")
 
-	bufferedUpstream := upstreamhttp.New(cfg.Anthropic.Version)
+	bufferedUpstream := upstreamhttp.NewWithBearerTokenResolver(cfg.Anthropic.Version, oauth.bearerTokens)
 	crossProtocol := translator.New(bufferedUpstream)
 
 	openAIUpstream := openaicompat.New(logger)
@@ -67,17 +72,10 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	anthropicUpstream := anthropicProvider.New(logger, cfg.Anthropic.Version)
 	anthropicAPI := anthropicProtocol.NewRoutedHandler(router, anthropicTarget, anthropicUpstream, crossProtocol)
 
-	geminiUpstream := geminiProvider.New(logger)
+	geminiUpstream := geminiProvider.NewWithBearerTokenResolver(logger, oauth.bearerTokens)
 	geminiAPI := geminiProtocol.NewRoutedHandler(router, geminiTarget, geminiUpstream, crossProtocol)
 
-	oauthHandler, err := resolveOAuthHandler(context.Background(), cfg, catalogStore)
-	if err != nil {
-		if catalogStore != nil {
-			_ = catalogStore.Close()
-		}
-		return nil, err
-	}
-	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, oauthHandler, logger)
+	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, oauth.handler, logger)
 	return &App{server: server.HTTP, logger: logger, catalogStore: catalogStore}, nil
 }
 
@@ -87,18 +85,13 @@ func (a *App) Run(ctx context.Context) (err error) {
 			err = closeErr
 		}
 	}()
-
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", a.server.Addr)
 	if err != nil {
 		return err
 	}
-
 	a.logger.Info("gateway listening", "addr", listener.Addr().String())
 	errCh := make(chan error, 1)
-	go func() {
-		errCh <- a.server.Serve(listener)
-	}()
-
+	go func() { errCh <- a.server.Serve(listener) }()
 	select {
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {

@@ -28,14 +28,28 @@ func NewExchanger(client *http.Client) *Exchanger {
 }
 
 func (e *Exchanger) Exchange(ctx context.Context, provider domainoauth.Provider, request appoauth.ExchangeRequest) (domainoauth.TokenSet, error) {
-	form := url.Values{
+	return e.exchangeForm(ctx, provider.TokenURL, url.Values{
 		"grant_type":    {"authorization_code"},
 		"client_id":     {provider.ClientID},
 		"code":          {request.Code},
 		"code_verifier": {request.CodeVerifier},
 		"redirect_uri":  {request.RedirectURI},
+	})
+}
+
+func (e *Exchanger) Refresh(ctx context.Context, provider domainoauth.Provider, current domainoauth.TokenSet) (domainoauth.TokenSet, error) {
+	if strings.TrimSpace(current.RefreshToken) == "" {
+		return domainoauth.TokenSet{}, fmt.Errorf("OAuth refresh token must not be empty")
 	}
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.TokenURL, strings.NewReader(form.Encode()))
+	return e.exchangeForm(ctx, provider.TokenURL, url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {provider.ClientID},
+		"refresh_token": {current.RefreshToken},
+	})
+}
+
+func (e *Exchanger) exchangeForm(ctx context.Context, tokenURL string, form url.Values) (domainoauth.TokenSet, error) {
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return domainoauth.TokenSet{}, fmt.Errorf("build OAuth token request: %w", err)
 	}
