@@ -35,7 +35,19 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		})
 	}
 
-	router, err := routing.NewTable(targets, cfg.DefaultProviderID, cfg.ModelRoutes)
+	modelRoutes := make(map[string][]routing.RouteTarget, len(cfg.ModelRoutes))
+	for model, configuredTargets := range cfg.ModelRoutes {
+		routeTargets := make([]routing.RouteTarget, 0, len(configuredTargets))
+		for _, configuredTarget := range configuredTargets {
+			routeTargets = append(routeTargets, routing.RouteTarget{
+				ProviderID: configuredTarget.ProviderID,
+				Model:      configuredTarget.Model,
+			})
+		}
+		modelRoutes[model] = routeTargets
+	}
+
+	router, err := routing.NewTable(targets, cfg.DefaultProviderID, modelRoutes)
 	if err != nil {
 		return nil, err
 	}
