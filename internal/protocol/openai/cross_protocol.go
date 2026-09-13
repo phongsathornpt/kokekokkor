@@ -19,6 +19,7 @@ type CrossProtocolTranslator interface {
 	OpenAIChatToAnthropic(context.Context, provider.Target, string, http.Header, []byte) (upstream.Response, error)
 	OpenAIChatToAnthropicStream(context.Context, provider.Target, string, http.Header, []byte) (upstream.StreamResponse, error)
 	OpenAIResponsesToAnthropic(context.Context, provider.Target, string, http.Header, []byte) (upstream.Response, error)
+	OpenAIResponsesToAnthropicStream(context.Context, provider.Target, string, http.Header, []byte) (upstream.StreamResponse, error)
 }
 
 func (h *Handler) serveAnthropicAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
@@ -46,7 +47,7 @@ func (h *Handler) serveAnthropicChatAttempt(w http.ResponseWriter, r *http.Reque
 		return true, nil
 	}
 	if stream {
-		return h.serveAnthropicStreamAttempt(w, r, body, attempt, allowFallback)
+		return h.serveAnthropicChatStreamAttempt(w, r, body, attempt, allowFallback)
 	}
 	return h.serveAnthropicBufferedAttempt(w, r, body, attempt, allowFallback)
 }
@@ -58,15 +59,7 @@ func (h *Handler) serveAnthropicResponsesAttempt(w http.ResponseWriter, r *http.
 		return true, nil
 	}
 	if stream {
-		err := apptranslation.CompatibilityError{
-			Feature: "stream",
-			Reason:  "Responses streaming translation is implemented in a later slice",
-		}
-		if allowFallback {
-			return false, err
-		}
-		writeError(w, http.StatusBadRequest, "unsupported_feature", err.Error())
-		return true, nil
+		return h.serveAnthropicResponsesStreamAttempt(w, r, body, attempt, allowFallback)
 	}
 
 	response, err := h.translator.OpenAIResponsesToAnthropic(r.Context(), attempt.Target, attempt.Model, r.Header, body)
@@ -112,11 +105,23 @@ func writeAnthropicBufferedResponse(w http.ResponseWriter, response upstream.Res
 	return true, nil
 }
 
-func (h *Handler) serveAnthropicStreamAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
+func (h *Handler) serveAnthropicChatStreamAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
 	response, err := h.translator.OpenAIChatToAnthropicStream(r.Context(), attempt.Target, attempt.Model, r.Header, body)
 	if done, retryErr := handleCrossProtocolError(w, err, allowFallback); done || retryErr != nil {
 		return done, retryErr
 	}
+	return writeAnthropicStreamResponse(w, response, allowFallback)
+}
+
+func (h *Handler) serveAnthropicResponsesStreamAttempt(w http.ResponseWriter, r *http.Request, body []byte, attempt routing.Attempt, allowFallback bool) (bool, error) {
+	response, err := h.translator.OpenAIResponsesToAnthropicStream(r.Context(), attempt.Target, attempt.Model, r.Header, body)
+	if done, retryErr := handleCrossProtocolError(w, err, allowFallback); done || retryErr != nil {
+		return done, retryErr
+	}
+	return writeAnthropicStreamResponse(w, response, allowFallback)
+}
+
+func writeAnthropicStreamResponse(w http.ResponseWriter, response upstream.StreamResponse, allowFallback bool) (bool, error) {
 	if response.Body == nil {
 		return false, errors.New("translated stream returned no response body")
 	}
