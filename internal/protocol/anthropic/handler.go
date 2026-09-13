@@ -21,36 +21,23 @@ type Handler struct {
 	translator CrossProtocolTranslator
 }
 
-// NewHandler preserves the original single-native-upstream constructor.
 func NewHandler(target *provider.Target, forwarder Forwarder) *Handler {
 	return &Handler{target: target, forwarder: forwarder}
 }
 
 func NewRoutedHandler(router routing.Router, target *provider.Target, forwarder Forwarder, translator CrossProtocolTranslator) *Handler {
-	return &Handler{
-		target:     target,
-		router:     router,
-		forwarder:  forwarder,
-		translator: translator,
-	}
+	return &Handler{target: target, router: router, forwarder: forwarder, translator: translator}
 }
 
-func (h *Handler) Ready() bool {
-	return h.target != nil || h.router != nil
-}
+func (h *Handler) Ready() bool { return h.target != nil || h.router != nil }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.router == nil {
 		h.serveLegacy(w, r)
 		return
 	}
-
 	model := requestModel(r)
-	plan, err := h.router.Resolve(r.Context(), routing.Request{
-		Protocol:  provider.ProtocolAnthropic,
-		Operation: r.URL.Path,
-		Model:     model,
-	})
+	plan, err := h.router.Resolve(r.Context(), routing.Request{Protocol: provider.ProtocolAnthropic, Operation: r.URL.Path, Model: model})
 	if err != nil {
 		status := http.StatusBadGateway
 		message := err.Error()
@@ -65,16 +52,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "api_error", "no Anthropic route configured")
 		return
 	}
-
-	if len(plan.Attempts) == 1 &&
-		plan.Attempts[0].Target.EffectiveProtocol() == provider.ProtocolAnthropic &&
-		plan.Attempts[0].Model == model {
+	if len(plan.Attempts) == 1 && plan.Attempts[0].Target.EffectiveProtocol() == provider.ProtocolAnthropic && plan.Attempts[0].Model == model {
 		if err := h.forwarder.ServeHTTPTo(w, r, plan.Attempts[0].Target, false); err != nil {
 			writeError(w, http.StatusBadGateway, "api_error", err.Error())
 		}
 		return
 	}
-
 	body, err := replayBody(r)
 	if err != nil {
 		if errors.Is(err, errReplayBodyTooLarge) {
@@ -84,11 +67,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-
 	var lastErr error
 	for i, attempt := range plan.Attempts {
 		allowFallback := i < len(plan.Attempts)-1
-
 		switch attempt.Target.EffectiveProtocol() {
 		case provider.ProtocolAnthropic:
 			attemptBody := body
@@ -99,13 +80,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			attemptRequest := cloneWithBody(r, attemptBody)
-			if err := h.forwarder.ServeHTTPTo(w, attemptRequest, attempt.Target, allowFallback); err != nil {
+			if err := h.forwarder.ServeHTTPTo(w, cloneWithBody(r, attemptBody), attempt.Target, allowFallback); err != nil {
 				lastErr = err
 				continue
 			}
 			return
-
 		case provider.ProtocolOpenAI:
 			done, attemptErr := h.serveOpenAIAttempt(w, r, body, attempt, allowFallback)
 			if done {
@@ -115,12 +94,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				lastErr = attemptErr
 				continue
 			}
-
+		case provider.ProtocolGemini:
+			done, attemptErr := h.serveGeminiAttempt(w, r, body, attempt, allowFallback)
+			if done {
+				return
+			}
+			if attemptErr != nil {
+				lastErr = attemptErr
+				continue
+			}
 		default:
 			lastErr = fmt.Errorf("unsupported upstream protocol %q", attempt.Target.Protocol)
 		}
 	}
-
 	if lastErr == nil {
 		lastErr = errors.New("all upstream attempts failed")
 	}
@@ -140,11 +126,5 @@ func (h *Handler) serveLegacy(w http.ResponseWriter, r *http.Request) {
 func writeError(w http.ResponseWriter, status int, errorType, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type": "error",
-		"error": map[string]any{
-			"type":    errorType,
-			"message": message,
-		},
-	})
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": "error", "error": map[string]any{"type": errorType, "message": message}})
 }
