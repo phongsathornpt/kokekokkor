@@ -10,10 +10,12 @@ The current implementation provides:
 - OpenAI-compatible `/v1/*` transparent reverse proxy
 - multiple OpenAI-compatible upstream providers
 - client-visible model aliases and ordered fallback plans
-- protocol-aware routing across OpenAI-compatible and Anthropic targets
+- protocol-aware routing across OpenAI-compatible, Anthropic, and Gemini targets
 - lock-free immutable routing snapshots
 - native Anthropic Messages API passthrough
 - native Anthropic token-counting passthrough
+- native Gemini `/v1beta/*` passthrough with SSE preservation
+- Gemini model-path aliases and ordered same-protocol fallback
 - OpenAI Chat Completions -> Anthropic Messages translation
 - Anthropic Messages -> OpenAI Chat Completions translation
 - OpenAI Responses -> Anthropic Messages translation
@@ -23,7 +25,7 @@ The current implementation provides:
 - liveness/readiness endpoints
 - graceful shutdown and structured logs
 
-Gemini, OAuth, persistence, the HTMX admin UI, reasoning translation, and realtime/WebSocket translation are staged as separate implementation slices.
+Gemini cross-protocol translation, OAuth, persistence, the HTMX admin UI, reasoning translation, and realtime/WebSocket translation are staged as separate implementation slices.
 
 ## OpenAI-compatible setup
 
@@ -58,9 +60,33 @@ When gateway authentication is enabled, Anthropic clients can send `KOKEKOKKOR_A
 
 The incoming `anthropic-version` header is preserved. If it is missing, the gateway adds `KOKEKOKKOR_ANTHROPIC_VERSION`, which defaults to `2023-06-01`. Native streaming Messages responses remain Anthropic SSE without translation.
 
+## Native Gemini setup
+
+```bash
+export KOKEKOKKOR_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+export KOKEKOKKOR_GEMINI_API_KEY=your-gemini-key
+export KOKEKOKKOR_API_KEY=your-local-gateway-key
+
+go run ./cmd/kokekokkor
+```
+
+Point a Gemini client at the gateway base URL and keep the API version set to `v1beta`. The gateway transparently forwards `/v1beta/*`, including model generation, streaming generation, token counting, model discovery, files, and newer native resources that use the same API prefix.
+
+When gateway authentication is enabled, Gemini clients can send `KOKEKOKKOR_API_KEY` through `x-goog-api-key`, a `key` query parameter, or bearer auth. Before forwarding, the gateway strips the client credential and injects `KOKEKOKKOR_GEMINI_API_KEY` as `x-goog-api-key`. Query parameters such as `alt=sse` are preserved, and native streaming remains Gemini SSE without translation.
+
+Model-aware routes work for Gemini endpoints whose model is encoded in the path, such as:
+
+```text
+POST /v1beta/models/{model}:generateContent
+POST /v1beta/models/{model}:streamGenerateContent
+POST /v1beta/models/{model}:countTokens
+```
+
+An alias rewrites only the `{model}` path segment. Ordered Gemini-to-Gemini fallback replays the request body only when routing requires it, with the same 64 MiB replay limit used by the other transformed/fallback paths. Gemini resources whose model is carried only in the request body currently use the protocol default provider.
+
 ## Multi-provider routing
 
-Configure OpenAI-compatible providers as JSON and the native Anthropic target with its own variables:
+Configure OpenAI-compatible providers plus native Anthropic and Gemini targets:
 
 ```bash
 export KOKEKOKKOR_PROVIDERS_JSON='[
@@ -72,14 +98,19 @@ export KOKEKOKKOR_DEFAULT_PROVIDER_ID=openai-primary
 export KOKEKOKKOR_ANTHROPIC_PROVIDER_ID=anthropic
 export KOKEKOKKOR_ANTHROPIC_BASE_URL=https://api.anthropic.com
 export KOKEKOKKOR_ANTHROPIC_API_KEY=anthropic-key
+
+export KOKEKOKKOR_GEMINI_PROVIDER_ID=gemini
+export KOKEKOKKOR_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+export KOKEKOKKOR_GEMINI_API_KEY=gemini-key
 ```
 
-Routes may point to either protocol. The client-visible model name selects an ordered provider/model attempt plan:
+Routes may reference any configured protocol target. The client-visible model name selects an ordered provider/model attempt plan:
 
 ```bash
 export KOKEKOKKOR_MODEL_ROUTES_JSON='{
   "native-openai":"openai-primary",
   "via-anthropic":{"provider":"anthropic","model":"claude-upstream"},
+  "native-gemini":{"provider":"gemini","model":"gemini-upstream"},
   "portable":[
     {"provider":"anthropic","model":"claude-upstream"},
     {"provider":"openai-backup","model":"gpt-upstream"}
@@ -87,7 +118,7 @@ export KOKEKOKKOR_MODEL_ROUTES_JSON='{
 }'
 ```
 
-For an OpenAI client, a route targeting Anthropic enters the canonical semantic layer only for operations with an explicit translator. Anthropic Messages clients may likewise route to OpenAI-compatible targets where a reverse translator exists.
+For an OpenAI client, a route targeting Anthropic enters the canonical semantic layer only for operations with an explicit translator. Anthropic Messages clients may likewise route to OpenAI-compatible targets where a reverse translator exists. Gemini currently supports native Gemini targets only; a cross-protocol Gemini attempt is rejected before an upstream call, allowing a later compatible route target to be tried.
 
 Same-protocol routes remain on the transparent reverse-proxy path. They are not decoded into the canonical IR merely because routing is enabled.
 
@@ -118,7 +149,7 @@ Chat/Messages streaming handles text deltas, tool-call starts, incremental tool 
 
 Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, reasoning/thinking streams, Responses built-in tools, persisted conversation/background controls, structured-output controls, refusal translation, Anthropic document blocks on the Chat Completions path, and error-tagged Anthropic tool results.
 
-Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Once translated SSE bytes are emitted, the selected route is final. A parser failure before the first translated event is returned as a gateway translation error rather than an empty HTTP 200 response.
+Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Once translated or native streaming bytes are emitted, the selected route is final.
 
 ## Configuration
 
@@ -136,6 +167,9 @@ Fallback remains pre-commit only. Transport failures and selected retryable stat
 | `KOKEKOKKOR_ANTHROPIC_BASE_URL` | empty | Native Anthropic upstream URL |
 | `KOKEKOKKOR_ANTHROPIC_API_KEY` | empty | Native Anthropic upstream key |
 | `KOKEKOKKOR_ANTHROPIC_VERSION` | `2023-06-01` | Version added when the client omits `anthropic-version` |
+| `KOKEKOKKOR_GEMINI_PROVIDER_ID` | `gemini` | Native Gemini upstream ID |
+| `KOKEKOKKOR_GEMINI_BASE_URL` | empty | Native Gemini upstream URL |
+| `KOKEKOKKOR_GEMINI_API_KEY` | empty | Upstream Gemini API key |
 
 Provider IDs must be unique across protocols. `/health/ready` succeeds when at least one protocol default or exact model route is usable. `/health/live` only reflects process liveness.
 

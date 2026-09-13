@@ -59,6 +59,37 @@ func anthropicAPIKeyAuth(expected string, next http.Handler) http.Handler {
 	})
 }
 
+func geminiAPIKeyAuth(expected string, next http.Handler) http.Handler {
+	if expected == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("X-Goog-Api-Key")
+		if token == "" {
+			token = r.URL.Query().Get("key")
+		}
+		if token == "" {
+			scheme, bearer, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+			if ok && strings.EqualFold(scheme, "Bearer") {
+				token = bearer
+			}
+		}
+		if !apiKeyEqual(token, expected) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":    http.StatusUnauthorized,
+					"message": "invalid x-goog-api-key",
+					"status":  "UNAUTHENTICATED",
+				},
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func apiKeyEqual(got, expected string) bool {
 	if got == "" || len(got) != len(expected) {
 		return false

@@ -12,8 +12,10 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/config"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 	anthropicProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/anthropic"
+	geminiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/gemini"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
 	anthropicProvider "github.com/phongsathornpt/kokekokkor/internal/provider/anthropic"
+	geminiProvider "github.com/phongsathornpt/kokekokkor/internal/provider/gemini"
 	"github.com/phongsathornpt/kokekokkor/internal/provider/openaicompat"
 	"github.com/phongsathornpt/kokekokkor/internal/translator"
 	"github.com/phongsathornpt/kokekokkor/internal/transport/httpserver"
@@ -30,7 +32,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		return nil, err
 	}
 
-	targets := make([]provider.Target, 0, len(cfg.Providers)+1)
+	targets := make([]provider.Target, 0, len(cfg.Providers)+2)
 	for _, configured := range cfg.Providers {
 		targets = append(targets, provider.Target{
 			ID:       configured.ID,
@@ -52,6 +54,18 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		targets = append(targets, target)
 	}
 
+	var geminiTarget *provider.Target
+	if cfg.Gemini.BaseURL != "" {
+		target := provider.Target{
+			ID:       cfg.Gemini.ID,
+			Protocol: provider.ProtocolGemini,
+			BaseURL:  cfg.Gemini.BaseURL,
+			APIKey:   cfg.Gemini.APIKey,
+		}
+		geminiTarget = &target
+		targets = append(targets, target)
+	}
+
 	modelRoutes := make(map[string][]routing.RouteTarget, len(cfg.ModelRoutes))
 	for model, configuredTargets := range cfg.ModelRoutes {
 		routeTargets := make([]routing.RouteTarget, 0, len(configuredTargets))
@@ -64,12 +78,15 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		modelRoutes[model] = routeTargets
 	}
 
-	defaults := make(map[provider.Protocol]string, 2)
+	defaults := make(map[provider.Protocol]string, 3)
 	if cfg.DefaultProviderID != "" {
 		defaults[provider.ProtocolOpenAI] = cfg.DefaultProviderID
 	}
 	if anthropicTarget != nil {
 		defaults[provider.ProtocolAnthropic] = anthropicTarget.ID
+	}
+	if geminiTarget != nil {
+		defaults[provider.ProtocolGemini] = geminiTarget.ID
 	}
 	router, err := routing.NewProtocolTable(targets, defaults, modelRoutes)
 	if err != nil {
@@ -85,7 +102,10 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	anthropicUpstream := anthropicProvider.New(logger, cfg.Anthropic.Version)
 	anthropicAPI := anthropicProtocol.NewRoutedHandler(router, anthropicTarget, anthropicUpstream, crossProtocol)
 
-	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, logger)
+	geminiUpstream := geminiProvider.New(logger)
+	geminiAPI := geminiProtocol.NewRoutedHandler(router, geminiTarget, geminiUpstream)
+
+	server := httpserver.New(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, logger)
 	return &App{server: server.HTTP, logger: logger}, nil
 }
 
