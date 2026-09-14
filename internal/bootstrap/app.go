@@ -69,7 +69,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		})
 	}
 
-	oauth, err := resolveOAuthRuntime(context.Background(), cfg, snapshot, catalogStore)
+	oauth, err := resolveOAuthRuntime(context.Background(), cfg, snapshot, catalogStore, logger)
 	if err != nil {
 		if catalogStore != nil {
 			_ = catalogStore.Close()
@@ -103,40 +103,42 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	return &App{server: server.HTTP, logger: logger, catalogStore: catalogStore}, nil
 }
 
-func (a *App) Run(ctx context.Context) (err error) {
-	defer func() {
-		if closeErr := a.Close(); err == nil && closeErr != nil {
-			err = closeErr
-		}
-	}()
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", a.server.Addr)
+func (a *App) Run(ctx context.Context) error {
+	listener, err := net.Listen("tcp", a.server.Addr)
 	if err != nil {
 		return err
 	}
-	a.logger.Info("gateway listening", "addr", listener.Addr().String())
-	errCh := make(chan error, 1)
-	go func() { errCh <- a.server.Serve(listener) }()
+	serveErr := make(chan error, 1)
+	go func() {
+		if err := a.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
+			return
+		}
+		serveErr <- nil
+	}()
+
 	select {
-	case err := <-errCh:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+	case err := <-serveErr:
+		if a.catalogStore != nil {
+			_ = a.catalogStore.Close()
 		}
 		return err
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := a.server.Shutdown(shutdownCtx); err != nil {
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := a.server.Shutdown(shutdownCtx); err != nil {
+		_ = a.server.Close()
+		if a.catalogStore != nil {
+			_ = a.catalogStore.Close()
+		}
+		return err
+	}
+	if a.catalogStore != nil {
+		if err := a.catalogStore.Close(); err != nil {
 			return err
 		}
-		return nil
 	}
-}
-
-func (a *App) Close() error {
-	if a == nil || a.catalogStore == nil {
-		return nil
-	}
-	err := a.catalogStore.Close()
-	a.catalogStore = nil
-	return err
+	return <-serveErr
 }
