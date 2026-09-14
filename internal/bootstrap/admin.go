@@ -32,5 +32,12 @@ func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, cre
 	if err != nil {
 		return nil, err
 	}
-	return adminhttp.NewSessionAuth(adminConfig.Password, adminConfig.SessionTTL, handler), nil
+
+	protected := http.NewServeMux()
+	protected.Handle("/admin", handler)
+	protected.Handle("/admin/", handler)
+	if oauth.handler != nil {
+		protected.Handle("GET /admin/oauth/{provider}/start", oauth.handler)
+	}
+	return adminhttp.NewSessionAuth(adminConfig.Password, adminConfig.SessionTTL, protected), nil
 }
