@@ -65,7 +65,9 @@ func GeminiToAnthropicRequest(request llm.Request) (llm.Request, error) {
 					return llm.Request{}, unsupported("file image", "Gemini fileData images cannot be forwarded to Anthropic losslessly")
 				}
 			case llm.DocumentBlock:
-				return llm.Request{}, unsupported("document", "Gemini document/media parts are not translated to Anthropic yet")
+				if value.Source.Type != llm.MediaSourceBase64 {
+					return llm.Request{}, unsupported("document", "Gemini fileData documents cannot be forwarded to Anthropic losslessly")
+				}
 			case llm.ToolResultBlock:
 				if value.IsError {
 					return llm.Request{}, unsupported("function response error", "Gemini function responses have no portable Anthropic error flag mapping")
@@ -116,7 +118,9 @@ func checkAnthropicBlockForGemini(block llm.ContentBlock) error {
 			return unsupported("image", "Gemini translation currently accepts only inline base64 images")
 		}
 	case llm.DocumentBlock:
-		return unsupported("document", "Anthropic document translation to Gemini is not implemented")
+		if value.Source.Type != llm.MediaSourceBase64 {
+			return unsupported("document", "Gemini translation currently accepts only inline base64 documents")
+		}
 	case llm.ReasoningBlock:
 		return unsupported("thinking", "Anthropic thinking blocks cannot yet be translated to Gemini")
 	case llm.ToolCallBlock:
