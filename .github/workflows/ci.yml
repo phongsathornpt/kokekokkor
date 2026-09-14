@@ -42,5 +42,6 @@ jobs:
           go test ./internal/protocol/gemini -run='^$' -fuzz='^FuzzDecodeGenerateContentRequest$' -fuzztime=2s
           go test ./internal/protocol/openai -run='^$' -fuzz='^FuzzDecodeChatRequest$' -fuzztime=2s
           go test ./internal/protocol/openai -run='^$' -fuzz='^FuzzDecodeResponsesRequest$' -fuzztime=2s
+          go test ./internal/protocol/sse -run='^$' -fuzz='^FuzzDecode$' -fuzztime=2s
       - name: Build
         run: go build ./...
