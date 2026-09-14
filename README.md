@@ -1,36 +1,38 @@
 # kokekokkor
 
-A high-performance LLM gateway written in Go. Native protocol traffic stays transparent whenever possible; cross-provider traffic uses explicit semantic adapters only when protocols differ.
+A high-performance LLM gateway written in Go 1.27. Native protocol traffic stays transparent whenever possible; cross-provider traffic enters an explicit canonical semantic layer only when protocols differ.
 
-## Current foundation
+See [COMPATIBILITY.md](COMPATIBILITY.md) for the current cross-protocol support matrix and deliberate strict boundaries.
 
-The current implementation provides:
+## Implemented surface
 
-- Go 1.27 gateway foundation
+kokekokkor currently includes:
+
 - OpenAI-compatible `/v1/*` transparent reverse proxy
-- multiple OpenAI-compatible upstream providers
-- client-visible model aliases and ordered fallback plans
-- protocol-aware routing across OpenAI-compatible, Anthropic, and Gemini targets
-- lock-free immutable routing snapshots
-- native Anthropic Messages API passthrough
-- native Anthropic token-counting passthrough
-- native Gemini `/v1beta/*` passthrough with SSE preservation
-- Gemini model-path aliases and ordered same-protocol fallback
-- OpenAI Chat Completions -> Anthropic Messages translation
-- Anthropic Messages -> OpenAI Chat Completions translation
-- OpenAI Responses -> Anthropic Messages translation
-- buffered OpenAI Chat Completions -> Gemini `generateContent` translation
-- buffered Gemini `generateContent` -> OpenAI Chat Completions translation
-- buffered OpenAI Responses -> Gemini `generateContent` translation
-- cross-protocol SSE translation for OpenAI Chat Completions, Anthropic Messages, OpenAI Responses, and Gemini `streamGenerateContent`
-- strict compatibility errors instead of silently dropping unsupported fields
-- protocol-appropriate client authentication
-- liveness/readiness endpoints
-- graceful shutdown and structured logs
+- Anthropic Messages and token-counting passthrough
+- Gemini `/v1beta/*` passthrough, including native SSE and model-path routing
+- multiple providers, model aliases, ordered fallback, and immutable routing snapshots
+- buffered and streaming OpenAI Chat Completions <-> Anthropic Messages translation
+- buffered and streaming OpenAI Chat Completions <-> Gemini `generateContent` translation
+- buffered and streaming Anthropic Messages <-> Gemini translation for the portable subset
+- buffered and streaming OpenAI Responses -> Anthropic/Gemini translation
+- structured JSON Schema output mapping
+- tool calls/results, parallel-tool policy where representable, portable documents, and tool-error mapping where representable
+- reasoning effort controls and provider reasoning summaries into OpenAI Responses
+- buffered refusal/content-block output mapped to OpenAI Responses refusal parts
+- canonical stream failures mapped to OpenAI Responses `response.failed`
+- OpenAI-compatible Realtime WebSocket passthrough with routing, aliases, auth replacement, and fallback before upgrade
+- provider API-key auth plus OAuth/PKCE profiles with refreshable persisted credentials
+- encrypted SQLite credential persistence with key rotation support
+- SQLite-backed provider/routing catalog management
+- HTMX admin UI with authenticated sessions, CSRF protection, provider CRUD, route edits, credential controls, and OAuth connect/disconnect
+- request correlation IDs, structured access logs, liveness/readiness endpoints, and graceful shutdown
 
-Anthropic/Gemini translation, OAuth, persistence, the HTMX admin UI, reasoning translation, and realtime/WebSocket translation are staged as separate implementation slices.
+Unsupported cross-protocol semantics fail explicitly rather than being silently discarded.
 
-## OpenAI-compatible setup
+## Quick start
+
+OpenAI-compatible upstream:
 
 ```bash
 export KOKEKOKKOR_OPENAI_BASE_URL=https://api.openai.com
@@ -40,56 +42,23 @@ export KOKEKOKKOR_API_KEY=your-local-gateway-key
 go run ./cmd/kokekokkor
 ```
 
-Point an OpenAI-compatible client at `http://localhost:8080/v1` and use `KOKEKOKKOR_API_KEY` as its bearer token.
+Point an OpenAI-compatible client at `http://localhost:8080/v1` and use `KOKEKOKKOR_API_KEY` as the client-facing bearer token.
 
-## Native Anthropic setup
+Anthropic and Gemini can be enabled alongside OpenAI-compatible providers:
 
 ```bash
 export KOKEKOKKOR_ANTHROPIC_BASE_URL=https://api.anthropic.com
 export KOKEKOKKOR_ANTHROPIC_API_KEY=your-anthropic-key
-export KOKEKOKKOR_API_KEY=your-local-gateway-key
 
-go run ./cmd/kokekokkor
-```
-
-Point an Anthropic client at the gateway base URL. Native endpoints currently include:
-
-```text
-POST /v1/messages
-POST /v1/messages/count_tokens
-```
-
-When gateway authentication is enabled, Anthropic clients can send `KOKEKOKKOR_API_KEY` through their ordinary `x-api-key` field. The gateway replaces it with the configured upstream Anthropic key before forwarding. `Authorization` is stripped so gateway credentials never leak upstream.
-
-The incoming `anthropic-version` header is preserved. If it is missing, the gateway adds `KOKEKOKKOR_ANTHROPIC_VERSION`, which defaults to `2023-06-01`. Native streaming Messages responses remain Anthropic SSE without translation.
-
-## Native Gemini setup
-
-```bash
 export KOKEKOKKOR_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 export KOKEKOKKOR_GEMINI_API_KEY=your-gemini-key
-export KOKEKOKKOR_API_KEY=your-local-gateway-key
-
-go run ./cmd/kokekokkor
 ```
 
-Point a Gemini client at the gateway base URL and keep the API version set to `v1beta`. The gateway transparently forwards `/v1beta/*`, including model generation, streaming generation, token counting, model discovery, files, and newer native resources that use the same API prefix.
-
-When gateway authentication is enabled, Gemini clients can send `KOKEKOKKOR_API_KEY` through `x-goog-api-key`, a `key` query parameter, or bearer auth. Before forwarding, the gateway strips the client credential and injects `KOKEKOKKOR_GEMINI_API_KEY` as `x-goog-api-key`. Query parameters such as `alt=sse` are preserved, and native streaming remains Gemini SSE without translation.
-
-Model-aware routes work for Gemini endpoints whose model is encoded in the path, such as:
-
-```text
-POST /v1beta/models/{model}:generateContent
-POST /v1beta/models/{model}:streamGenerateContent
-POST /v1beta/models/{model}:countTokens
-```
-
-An alias rewrites only the `{model}` path segment. Ordered Gemini-to-Gemini fallback replays the request body only when routing requires it, with the same 64 MiB replay limit used by the other transformed/fallback paths. Gemini resources whose model is carried only in the request body currently use the protocol default provider.
+Native traffic keeps its native protocol and streaming format. Gateway credentials are stripped and replaced with the selected upstream provider credential before forwarding.
 
 ## Multi-provider routing
 
-Configure OpenAI-compatible providers plus native Anthropic and Gemini targets:
+Configure OpenAI-compatible providers with `KOKEKOKKOR_PROVIDERS_JSON` and route client-visible model names with `KOKEKOKKOR_MODEL_ROUTES_JSON`:
 
 ```bash
 export KOKEKOKKOR_PROVIDERS_JSON='[
@@ -98,22 +67,7 @@ export KOKEKOKKOR_PROVIDERS_JSON='[
 ]'
 export KOKEKOKKOR_DEFAULT_PROVIDER_ID=openai-primary
 
-export KOKEKOKKOR_ANTHROPIC_PROVIDER_ID=anthropic
-export KOKEKOKKOR_ANTHROPIC_BASE_URL=https://api.anthropic.com
-export KOKEKOKKOR_ANTHROPIC_API_KEY=anthropic-key
-
-export KOKEKOKKOR_GEMINI_PROVIDER_ID=gemini
-export KOKEKOKKOR_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
-export KOKEKOKKOR_GEMINI_API_KEY=gemini-key
-```
-
-Routes may reference any configured protocol target. The client-visible model name selects an ordered provider/model attempt plan:
-
-```bash
 export KOKEKOKKOR_MODEL_ROUTES_JSON='{
-  "native-openai":"openai-primary",
-  "via-anthropic":{"provider":"anthropic","model":"claude-upstream"},
-  "via-gemini":{"provider":"gemini","model":"gemini-upstream"},
   "portable":[
     {"provider":"anthropic","model":"claude-upstream"},
     {"provider":"gemini","model":"gemini-upstream"},
@@ -122,68 +76,77 @@ export KOKEKOKKOR_MODEL_ROUTES_JSON='{
 }'
 ```
 
-For an OpenAI client, a route targeting Anthropic or Gemini enters the canonical semantic layer only for operations with an explicit translator. Anthropic Messages clients may route to OpenAI-compatible targets where the reverse translator exists. Gemini `generateContent` and `streamGenerateContent` clients may route to OpenAI-compatible targets through the Chat Completions adapters. Unsupported cross-protocol operations are rejected before an upstream call and can fall through to a later compatible route target while no response has been committed.
+A route is an ordered attempt plan. Same-protocol attempts remain transparent. Cross-protocol attempts are decoded, compatibility-checked, translated, and re-encoded. Compatibility failures detected before an upstream request may fall through to the next target. Retryable transport/status failures may also fall through before downstream bytes are committed.
 
-Same-protocol routes remain on the transparent reverse-proxy path. They are not decoded into the canonical IR merely because routing is enabled.
+Once response bytes have been committed, the selected attempt is final. The gateway does not replay a partially delivered generation.
 
-## Cross-protocol translation scope
+## Cross-protocol streaming
 
-Current runtime translation supports:
-
-```text
-POST /v1/chat/completions  <->  POST /v1/messages
-POST /v1/responses         ->   POST /v1/messages
-POST /v1/chat/completions  <->  POST /v1beta/models/{model}:generateContent
-stream: true               <->  POST /v1beta/models/{model}:streamGenerateContent?alt=sse
-POST /v1/responses         ->   POST /v1beta/models/{model}:generateContent
-stream: true               ->   POST /v1beta/models/{model}:streamGenerateContent?alt=sse
-```
-
-The OpenAI/Anthropic paths support both buffered and streaming forms. The Gemini Chat path supports buffered translation in both directions and streaming translation in both directions. OpenAI Responses supports buffered and streaming translation to Gemini.
-
-Portable request/response mappings include text, supported image sources, function/tool definitions, tool calls, text tool results, sampling controls, stop sequences, model aliases, stop reasons, and portable usage fields. Responses additionally supports portable `instructions`, Responses message/input items, function call/output items, and Responses-native output objects. The Gemini adapter maps leading text-only system instructions, inline base64 images, function declarations/calls/responses, portable tool choice, sampling controls, stop sequences, and prompt/output/cache-read/reasoning-token usage. On the Responses-to-Gemini path, a leading text-only developer instruction is normalized into Gemini `systemInstruction`; mixed system/developer precedence is rejected instead of flattened.
-
-Translated streaming uses the same canonical event pipeline across all supported protocol pairs:
+Translated streams share a canonical event pipeline:
 
 ```text
 upstream SSE
   -> provider SSE decoder
   -> canonical StreamEvent
+  -> compatibility policy
   -> target-protocol SSE encoder
   -> downstream client
 ```
 
-Chat/Messages/Gemini streaming handles text deltas, tool-call starts, tool arguments, usage, and protocol-native finish/stop events. OpenAI incremental function-call argument fragments are buffered when the target is Gemini because Gemini function-call `args` is a complete JSON object. Gemini `streamGenerateContent` uses `alt=sse` and emits native `GenerateContentResponse` SSE chunks without a Chat Completions `[DONE]` sentinel.
+Portable text, tool-call lifecycle, usage, finish reasons, and supported reasoning summaries remain incremental. Provider-specific opaque continuation state is not fabricated across protocols.
 
-Responses streaming emits Responses-native lifecycle events such as `response.created`, `response.output_item.added`, `response.output_text.delta`, `response.function_call_arguments.delta`, and `response.completed` or `response.incomplete`. Responses streams do not emit the Chat Completions `[DONE]` sentinel. `stream_options.include_obfuscation` is honored on translated Responses streams, while Chat `stream_options.include_usage` controls translated Chat usage chunks.
+OpenAI Realtime currently uses transparent WebSocket proxying only. Cross-provider live-event translation is deliberately unsupported until there is a defensible portable realtime event model.
 
-Same-protocol streams bypass the translation pipeline entirely and remain native byte streams.
+## Persistence, admin, and credentials
 
-Translation is strict. Requests or events are rejected when a feature cannot currently be represented without semantic loss. Examples include unsupported provider extensions, reasoning/thinking streams, Responses built-in tools, persisted conversation/background controls, structured-output controls, refusal translation, Anthropic document blocks on the Chat Completions path, error-tagged Anthropic tool results, Gemini Chat developer-role messages, mixed or interleaved instruction precedence on the Responses-to-Gemini path, non-text Gemini system semantics, OpenAI URL/file-backed images on the Gemini translation path, Gemini provider-specific request controls, unsupported streamed media output, provider-specific stream metadata, and unmapped streamed provider errors.
+Set `KOKEKOKKOR_DATABASE_DSN` to enable SQLite-backed runtime catalog persistence. Encrypted provider credentials require both:
 
-Fallback remains pre-commit only. Transport failures and selected retryable statuses (`429`, `500`, `502`, `503`, `504`, `529`) may advance to the next target before a response reaches the client. A compatibility rejection detected before calling an upstream may also advance to a later target. Translated streams are primed before the downstream response is committed so initial translation failures remain eligible for fallback. Once translated or native streaming bytes are emitted, the selected route is final.
+```text
+KOKEKOKKOR_CREDENTIAL_KEYS_JSON
+KOKEKOKKOR_CREDENTIAL_ACTIVE_KEY_VERSION
+```
 
-## Configuration
+Credential keys are versioned 32-byte values encoded as base64. Existing encrypted credentials can remain readable while the active version changes, allowing rotation without storing plaintext provider secrets.
+
+The admin surface is enabled when an admin credential exists. `KOKEKOKKOR_ADMIN_PASSWORD` takes precedence; otherwise `KOKEKOKKOR_API_KEY` is used as the admin password. The browser session uses CSRF protection and does not render stored secret values.
+
+## OAuth
+
+OAuth uses authorization-code + PKCE and persisted token sets. Configure the public callback base URL and one or more profiles:
+
+```text
+KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL
+KOKEKOKKOR_OAUTH_PROFILES_JSON
+```
+
+`KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID` remains available as a backward-compatible Gemini shorthand. Generic profiles may provide explicit authorization/token endpoints, scopes, and authorization parameters. Refreshed access tokens are persisted and used for native and translated provider calls; configured API keys remain the fallback when no OAuth token is available.
+
+## Core configuration
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `KOKEKOKKOR_ADDR` | `:8080` | HTTP listen address |
 | `KOKEKOKKOR_API_KEY` | empty | Optional client-facing gateway key |
-| `KOKEKOKKOR_PROVIDERS_JSON` | empty | JSON array of OpenAI-compatible providers |
-| `KOKEKOKKOR_DEFAULT_PROVIDER_ID` | empty | OpenAI-compatible default provider when no exact model route matches |
-| `KOKEKOKKOR_MODEL_ROUTES_JSON` | `{}` | Protocol-agnostic model routes, aliases, and ordered fallback targets |
-| `KOKEKOKKOR_OPENAI_PROVIDER_ID` | `default` | Legacy single OpenAI-compatible provider ID |
-| `KOKEKOKKOR_OPENAI_BASE_URL` | empty | Legacy single OpenAI-compatible upstream URL |
-| `KOKEKOKKOR_OPENAI_API_KEY` | empty | Legacy single OpenAI-compatible upstream key |
-| `KOKEKOKKOR_ANTHROPIC_PROVIDER_ID` | `anthropic` | Native Anthropic upstream ID |
-| `KOKEKOKKOR_ANTHROPIC_BASE_URL` | empty | Native Anthropic upstream URL |
-| `KOKEKOKKOR_ANTHROPIC_API_KEY` | empty | Native Anthropic upstream key |
-| `KOKEKOKKOR_ANTHROPIC_VERSION` | `2023-06-01` | Version added when the client omits `anthropic-version` |
-| `KOKEKOKKOR_GEMINI_PROVIDER_ID` | `gemini` | Native Gemini upstream ID |
-| `KOKEKOKKOR_GEMINI_BASE_URL` | empty | Native Gemini upstream URL |
-| `KOKEKOKKOR_GEMINI_API_KEY` | empty | Upstream Gemini API key |
+| `KOKEKOKKOR_DATABASE_DSN` | empty | Optional SQLite persistence DSN |
+| `KOKEKOKKOR_PROVIDERS_JSON` | empty | OpenAI-compatible provider catalog |
+| `KOKEKOKKOR_DEFAULT_PROVIDER_ID` | empty | Default OpenAI-compatible provider |
+| `KOKEKOKKOR_MODEL_ROUTES_JSON` | `{}` | Model aliases and ordered attempt plans |
+| `KOKEKOKKOR_OPENAI_BASE_URL` | empty | Legacy single OpenAI-compatible upstream |
+| `KOKEKOKKOR_OPENAI_API_KEY` | empty | Legacy single OpenAI-compatible key |
+| `KOKEKOKKOR_ANTHROPIC_PROVIDER_ID` | `anthropic` | Anthropic provider ID |
+| `KOKEKOKKOR_ANTHROPIC_BASE_URL` | empty | Anthropic upstream URL |
+| `KOKEKOKKOR_ANTHROPIC_API_KEY` | empty | Anthropic upstream key |
+| `KOKEKOKKOR_ANTHROPIC_VERSION` | `2023-06-01` | Added when the client omits `anthropic-version` |
+| `KOKEKOKKOR_GEMINI_PROVIDER_ID` | `gemini` | Gemini provider ID |
+| `KOKEKOKKOR_GEMINI_BASE_URL` | empty | Gemini upstream URL |
+| `KOKEKOKKOR_GEMINI_API_KEY` | empty | Gemini upstream key |
+| `KOKEKOKKOR_ADMIN_PASSWORD` | gateway API key | Admin login password |
+| `KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL` | empty | Public base URL used for OAuth callbacks |
+| `KOKEKOKKOR_OAUTH_PROFILES_JSON` | empty | OAuth profile definitions |
+| `KOKEKOKKOR_CREDENTIAL_KEYS_JSON` | empty | Versioned base64 encryption keys |
+| `KOKEKOKKOR_CREDENTIAL_ACTIVE_KEY_VERSION` | empty | Active credential encryption key version |
 
-Provider IDs must be unique across protocols. `/health/ready` succeeds when at least one protocol default or exact model route is usable. `/health/live` only reflects process liveness.
+Provider IDs must be unique across protocols. `/health/live` reflects process liveness. `/health/ready` succeeds when the runtime has at least one usable protocol default or exact model route.
 
 ## Development
 
@@ -194,11 +157,14 @@ make vet
 make build
 ```
 
+CI enforces `gofmt`, `go vet ./...`, `go test -race ./...`, and `go build ./...` on pull requests.
+
 ## Architecture
 
 ```text
 client
-  -> HTTP transport / protocol-specific auth
+  -> HTTP transport / protocol auth
+  -> request correlation / access logging
   -> protocol handler
   -> immutable routing plan
        same protocol
@@ -210,8 +176,8 @@ client
          -> encode upstream request
          -> upstream HTTP
               non-stream -> buffered response translation
-              stream     -> SSE decoder -> StreamEvent -> SSE encoder -> io.Pipe
+              stream     -> provider SSE -> StreamEvent -> target SSE
   -> client
 ```
 
-Native passthrough is the fidelity path. Cross-protocol translation only enters the canonical semantic layer when the selected target speaks a different protocol and the operation has an explicit semantic adapter.
+Native passthrough is the fidelity path. Cross-protocol translation is intentionally conservative: exact semantics are preserved where a real mapping exists, and everything else is rejected rather than approximated invisibly.
