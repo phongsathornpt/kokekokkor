@@ -53,6 +53,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isRealtimeWebSocketRequest(r) {
+		h.serveRealtimeWebSocket(w, r, plan, model)
+		return
+	}
+
 	// Preserve the transparent fast path: one OpenAI-compatible target and no
 	// alias means no full-body buffering or JSON re-encoding.
 	if len(plan.Attempts) == 1 &&

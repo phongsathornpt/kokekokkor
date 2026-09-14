@@ -9,10 +9,17 @@ import (
 	"strings"
 )
 
-// requestModel inspects the top-level model field while reconstructing the
-// request body from the exact bytes consumed by the JSON decoder plus the
-// unread remainder. The forwarder therefore receives the original wire body.
+// requestModel resolves query-carried models first, as used by the Realtime
+// WebSocket endpoint, then inspects the top-level JSON model field while
+// reconstructing the exact bytes consumed by the decoder plus the unread
+// remainder. The forwarder therefore receives the original wire body.
 func requestModel(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if model := strings.TrimSpace(r.URL.Query().Get("model")); model != "" {
+		return model
+	}
 	if r.Body == nil {
 		return ""
 	}
