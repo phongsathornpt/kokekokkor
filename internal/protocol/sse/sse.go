@@ -9,6 +9,7 @@ import (
 )
 
 const maxLineBytes = 4 << 20
+const maxEventDataBytes = 8 << 20
 
 type Event struct {
 	Name string
@@ -58,6 +59,13 @@ func Decode(r io.Reader, emit func(Event) error) error {
 		case "event":
 			event.Name = value
 		case "data":
+			additional := len(value)
+			if data.Len() != 0 {
+				additional++
+			}
+			if data.Len()+additional > maxEventDataBytes {
+				return fmt.Errorf("SSE event data exceeds %d byte limit", maxEventDataBytes)
+			}
 			if data.Len() != 0 {
 				data.WriteByte('\n')
 			}
