@@ -56,11 +56,11 @@ func GeminiToOpenAIStreamRequest(request llm.Request) (llm.Request, error) {
 }
 
 func GeminiToOpenAIStreamEvent(event llm.StreamEvent) error {
-	return validateGeminiStreamEvent(event, true)
+	return validateGeminiStreamEvent(event, true, false)
 }
 
 func GeminiToResponsesStreamEvent(event llm.StreamEvent) error {
-	if err := validateGeminiStreamEvent(event, true); err != nil {
+	if err := validateGeminiStreamEvent(event, true, true); err != nil {
 		return err
 	}
 	if event.Type == llm.StreamEventResponseStop && event.StopReason == llm.StopReasonContentBlock {
@@ -102,7 +102,7 @@ func OpenAIToGeminiStreamEvent(event llm.StreamEvent) error {
 	return nil
 }
 
-func validateGeminiStreamEvent(event llm.StreamEvent, allowContentBlock bool) error {
+func validateGeminiStreamEvent(event llm.StreamEvent, allowContentBlock, allowReasoning bool) error {
 	if len(event.Metadata) != 0 {
 		return unsupported("stream event metadata", fmt.Sprintf("event %q contains provider-specific Gemini metadata", event.Type))
 	}
@@ -116,12 +116,21 @@ func validateGeminiStreamEvent(event llm.StreamEvent, allowContentBlock bool) er
 	}
 	switch event.Type {
 	case llm.StreamEventReasoningDelta:
-		return unsupported("thinking stream", "Gemini thought parts cannot yet be represented losslessly")
+		if !allowReasoning {
+			return unsupported("thinking stream", "Gemini thought parts cannot yet be represented losslessly")
+		}
 	case llm.StreamEventError:
 		return unsupported("stream error", "Gemini stream errors are not translated into downstream terminal events")
 	case llm.StreamEventContentStart:
-		switch event.Block.(type) {
+		switch block := event.Block.(type) {
 		case llm.TextBlock, llm.ToolCallBlock:
+		case llm.ReasoningBlock:
+			if !allowReasoning {
+				return unsupported("thinking stream", "Gemini thought parts cannot yet be represented losslessly")
+			}
+			if block.Signature != "" || block.RedactedData != "" {
+				return unsupported("reasoning state", "provider state cannot be represented downstream")
+			}
 		default:
 			return unsupported("response content", fmt.Sprintf("stream block %T cannot be represented downstream", event.Block))
 		}

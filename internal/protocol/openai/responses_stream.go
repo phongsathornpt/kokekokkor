@@ -68,7 +68,7 @@ func (e *ResponsesStreamEncoder) Encode(event llm.StreamEvent) error {
 	case llm.StreamEventResponseStop:
 		return e.stopResponse(event)
 	case llm.StreamEventReasoningDelta:
-		return fmt.Errorf("reasoning stream events are not supported by Responses translation")
+		return e.writeReasoningDelta(event)
 	case llm.StreamEventError:
 		return fmt.Errorf("upstream stream error cannot be represented as a Responses event")
 	default:
@@ -104,6 +104,8 @@ func (e *ResponsesStreamEncoder) startContent(event llm.StreamEvent) error {
 	}
 
 	switch block := event.Block.(type) {
+	case llm.ReasoningBlock:
+		return e.startReasoningContent(event, block)
 	case llm.TextBlock:
 		state := &responsesStreamBlock{
 			kind:        "text",
@@ -218,6 +220,8 @@ func (e *ResponsesStreamEncoder) stopContent(event llm.StreamEvent) error {
 	delete(e.blocks, event.Index)
 
 	switch state.kind {
+	case "reasoning":
+		return e.stopReasoningContent(state)
 	case "text":
 		text := state.text.String()
 		if err := e.write("response.output_text.done", map[string]any{

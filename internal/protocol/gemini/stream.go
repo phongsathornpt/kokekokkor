@@ -112,7 +112,16 @@ func (d *geminiStreamDecoder) decodeEvent(event sse.Event) error {
 
 func (d *geminiStreamDecoder) decodePart(part geminiPart) error {
 	if part.Thought {
-		return fmt.Errorf("Gemini thought parts are not supported by translated streaming yet")
+		if part.Text == nil || *part.Text == "" {
+			return nil
+		}
+		if err := d.ensureReasoning(); err != nil {
+			return err
+		}
+		return d.emit(llm.StreamEvent{Type: llm.StreamEventReasoningDelta, Index: d.active.index, ReasoningDelta: *part.Text})
+	}
+	if part.ThoughtSignature != "" && (part.Text == nil || *part.Text == "") && part.FunctionCall == nil && part.InlineData == nil && part.FileData == nil && part.FunctionResponse == nil {
+		return nil
 	}
 	if part.Text != nil {
 		if err := d.ensureText(); err != nil {
@@ -151,6 +160,19 @@ func (d *geminiStreamDecoder) ensureText() error {
 		Index: block.index,
 		Block: llm.TextBlock{},
 	})
+}
+
+func (d *geminiStreamDecoder) ensureReasoning() error {
+	if d.active != nil && d.active.kind == "reasoning" {
+		return nil
+	}
+	if err := d.closeActive(); err != nil {
+		return err
+	}
+	block := &geminiDecodeBlock{index: d.nextBlock, kind: "reasoning"}
+	d.nextBlock++
+	d.active = block
+	return d.emit(llm.StreamEvent{Type: llm.StreamEventContentStart, Index: block.index, Block: llm.ReasoningBlock{}})
 }
 
 func (d *geminiStreamDecoder) decodeFunctionCall(call geminiFunctionCall) error {
