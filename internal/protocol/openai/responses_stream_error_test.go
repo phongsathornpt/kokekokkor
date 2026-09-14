@@ -15,7 +15,7 @@ func TestResponsesStreamEncoderEmitsFailedResponse(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	if err := encoder.Encode(llm.StreamEvent{
-		Type: llm.StreamEventError,
+		Type:  llm.StreamEventError,
 		Error: &llm.StreamError{Code: "overloaded_error", Message: "upstream overloaded", Retryable: true},
 	}); err != nil {
 		t.Fatalf("error: %v", err)
