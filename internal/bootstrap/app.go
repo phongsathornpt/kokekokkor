@@ -69,7 +69,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		})
 	}
 
-	oauth, err := resolveOAuthRuntime(context.Background(), cfg, catalogStore)
+	oauth, err := resolveOAuthRuntime(context.Background(), cfg, snapshot, catalogStore)
 	if err != nil {
 		if catalogStore != nil {
 			_ = catalogStore.Close()
@@ -90,10 +90,10 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	bufferedUpstream := upstreamhttp.NewWithBearerTokenResolver(cfg.Anthropic.Version, oauth.bearerTokens)
 	crossProtocol := translator.New(bufferedUpstream)
 
-	openAIUpstream := openaicompat.New(logger)
+	openAIUpstream := openaicompat.NewWithBearerTokenResolver(logger, oauth.bearerTokens)
 	openAI := openaiProtocol.NewHandler(router, openAIUpstream, crossProtocol)
 
-	anthropicUpstream := anthropicProvider.New(logger, cfg.Anthropic.Version)
+	anthropicUpstream := anthropicProvider.NewWithBearerTokenResolver(logger, cfg.Anthropic.Version, oauth.bearerTokens)
 	anthropicAPI := anthropicProtocol.NewRoutedHandler(router, anthropicTarget, anthropicUpstream, crossProtocol)
 
 	geminiUpstream := geminiProvider.NewWithBearerTokenResolver(logger, oauth.bearerTokens)
