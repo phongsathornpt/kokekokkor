@@ -47,7 +47,7 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 		return oauthRuntime{}, err
 	}
 	tokens := appoauth.NewCredentialTokenRepository(credentials)
-	exchanger := provideroauth.NewExchanger(http.DefaultClient)
+	exchanger := provideroauth.NewExchanger(nil)
 
 	configured := make(map[string]struct{}, len(snapshot.Providers))
 	for _, item := range snapshot.Providers {
