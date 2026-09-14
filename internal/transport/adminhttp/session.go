@@ -22,12 +22,13 @@ type adminSession struct {
 }
 
 type SessionAuth struct {
-	password string
-	ttl      time.Duration
-	next     http.Handler
-	now      func() time.Time
-	mu       sync.Mutex
-	sessions map[string]adminSession
+	password   string
+	ttl        time.Duration
+	next       http.Handler
+	now        func() time.Time
+	mu         sync.Mutex
+	mutationMu sync.Mutex
+	sessions   map[string]adminSession
 }
 
 func NewSessionAuth(password string, ttl time.Duration, next http.Handler) *SessionAuth {
@@ -86,6 +87,10 @@ func (a *SessionAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.WithValue(r.Context(), sessionContextKey{}, session.CSRF)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		a.mutationMu.Lock()
+		defer a.mutationMu.Unlock()
+	}
 	a.next.ServeHTTP(w, r.WithContext(ctx))
 }
 

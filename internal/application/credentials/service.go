@@ -61,6 +61,19 @@ func (s *Service) HasAPIKey(providerID string) bool {
 	return s.values[strings.TrimSpace(providerID)] != ""
 }
 
+func (s *Service) ForgetProvider(providerID string) {
+	if s == nil {
+		return
+	}
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, providerID)
+}
+
 func (s *Service) SetAPIKey(ctx context.Context, providerID, value string) error {
 	providerID = strings.TrimSpace(providerID)
 	value = strings.TrimSpace(value)

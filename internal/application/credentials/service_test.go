@@ -108,3 +108,15 @@ func TestServiceReadOnlyRejectsMutation(t *testing.T) {
 		t.Fatalf("SetAPIKey() error = %v", err)
 	}
 }
+
+func TestServiceForgetProviderDropsInMemoryCredentialEvenWhenReadOnly(t *testing.T) {
+	service := NewService(nil, map[string]string{"one": "env", "two": "keep"})
+	service.ForgetProvider(" one ")
+	got := service.Snapshot()
+	if _, ok := got["one"]; ok {
+		t.Fatalf("forgotten provider remains: %#v", got)
+	}
+	if got["two"] != "keep" {
+		t.Fatalf("unrelated credential changed: %#v", got)
+	}
+}
