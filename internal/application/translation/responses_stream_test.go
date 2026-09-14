@@ -81,13 +81,32 @@ func TestAnthropicToResponsesStreamEventAllowsPortableUsage(t *testing.T) {
 	}
 }
 
-func TestAnthropicToResponsesStreamEventRejectsThinkingAndRefusal(t *testing.T) {
+func TestAnthropicToResponsesStreamEventAllowsReasoningSummary(t *testing.T) {
 	for _, event := range []llm.StreamEvent{
-		{Type: llm.StreamEventReasoningDelta, ReasoningDelta: "secret"},
-		{Type: llm.StreamEventResponseStop, StopReason: llm.StopReasonContentBlock},
+		{Type: llm.StreamEventContentStart, Index: 0, Block: llm.ReasoningBlock{}},
+		{Type: llm.StreamEventReasoningDelta, Index: 0, ReasoningDelta: "summary"},
+		{Type: llm.StreamEventContentStop, Index: 0},
 	} {
-		if err := AnthropicToResponsesStreamEvent(event); !errors.Is(err, ErrUnsupported) {
-			t.Fatalf("event %q error = %v, want ErrUnsupported", event.Type, err)
+		if err := AnthropicToResponsesStreamEvent(event); err != nil {
+			t.Fatalf("event %q rejected: %v", event.Type, err)
 		}
+	}
+}
+
+func TestAnthropicToResponsesStreamEventRejectsProviderReasoningState(t *testing.T) {
+	err := AnthropicToResponsesStreamEvent(llm.StreamEvent{
+		Type:  llm.StreamEventContentStart,
+		Index: 0,
+		Block: llm.ReasoningBlock{Signature: "opaque"},
+	})
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("error = %v, want ErrUnsupported", err)
+	}
+}
+
+func TestAnthropicToResponsesStreamEventRejectsRefusal(t *testing.T) {
+	err := AnthropicToResponsesStreamEvent(llm.StreamEvent{Type: llm.StreamEventResponseStop, StopReason: llm.StopReasonContentBlock})
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("error = %v, want ErrUnsupported", err)
 	}
 }
