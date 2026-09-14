@@ -13,10 +13,9 @@ import (
 	"time"
 )
 
-const (
-	adminSessionCookie    = "kokekokkor_admin_session"
-	maxAdminFormBodyBytes = 1 << 20
-)
+const adminSessionCookie = "kokekokkor_admin_session"
+const maxAdminFormBodyBytes = 1 << 20
+const adminContentSecurityPolicy = "default-src 'none'; script-src https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
 
 type sessionContextKey struct{}
 
@@ -46,6 +45,8 @@ func NewSessionAuth(password string, ttl time.Duration, next http.Handler) *Sess
 }
 
 func (a *SessionAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	setAdminSecurityHeaders(w.Header())
+
 	if r.URL.Path == "/admin/login" {
 		switch r.Method {
 		case http.MethodGet:
@@ -187,6 +188,13 @@ func (a *SessionAuth) renderLogin(w http.ResponseWriter, status int, message str
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = loginTemplate.Execute(w, struct{ Message string }{Message: message})
+}
+
+func setAdminSecurityHeaders(header http.Header) {
+	header.Set("Content-Security-Policy", adminContentSecurityPolicy)
+	header.Set("Referrer-Policy", "no-referrer")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("X-Frame-Options", "DENY")
 }
 
 func parseAdminForm(w http.ResponseWriter, r *http.Request) bool {
