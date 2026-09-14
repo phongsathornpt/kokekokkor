@@ -46,6 +46,10 @@ func EncodeChatRequest(request llm.Request) ([]byte, error) {
 	if wire.ToolChoice, err = encodeChatToolChoice(request.ToolChoice); err != nil {
 		return nil, err
 	}
+	if request.ToolChoice != nil && request.ToolChoice.DisableParallel {
+		parallel := false
+		wire.ParallelToolCalls = &parallel
+	}
 	if wire.ResponseFormat, err = encodeChatResponseFormat(request.ResponseFormat); err != nil {
 		return nil, err
 	}
