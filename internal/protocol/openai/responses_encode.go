@@ -68,6 +68,7 @@ func encodeResponsesOutput(response llm.Response) ([]responseOutputItem, string,
 	var textParts []responseOutputPart
 	messageIndex := 0
 	callIndex := 0
+	reasoningIndex := 0
 
 	flushText := func() {
 		if len(textParts) == 0 {
@@ -107,7 +108,21 @@ func encodeResponsesOutput(response llm.Response) ([]responseOutputItem, string,
 			callIndex++
 
 		case llm.ReasoningBlock:
-			return nil, "", fmt.Errorf("Responses reasoning output translation is not implemented")
+			flushText()
+			if value.Text == "" {
+				continue
+			}
+			items = append(items, responseOutputItem{
+				ID:     fmt.Sprintf("rs_gateway_%d", reasoningIndex),
+				Type:   "reasoning",
+				Status: "completed",
+				Summary: []responseSummaryPart{{
+					Type: "summary_text",
+					Text: value.Text,
+				}},
+			})
+			reasoningIndex++
+
 		default:
 			return nil, "", fmt.Errorf("canonical response block %T cannot be represented in Responses output", block)
 		}
