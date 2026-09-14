@@ -33,7 +33,7 @@ func TestMessagesStreamEncoderEmitsErrorEvent(t *testing.T) {
 		t.Fatalf("Encode() error = %v", err)
 	}
 	body := out.String()
-	for _, want := range []string{"event: error", `\"type\":\"overloaded_error\"`, `\"message\":\"busy\"`} {
+	for _, want := range []string{"event: error", `"type":"overloaded_error"`, `"message":"busy"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("stream missing %q:\n%s", want, body)
 		}
