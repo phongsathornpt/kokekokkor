@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	appoauth "github.com/phongsathornpt/kokekokkor/internal/application/oauth"
@@ -22,7 +23,7 @@ type oauthRuntime struct {
 	providerIDs  []string
 }
 
-func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domaincatalog.Snapshot, store *sqlitestore.Store) (oauthRuntime, error) {
+func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domaincatalog.Snapshot, store *sqlitestore.Store, logger *slog.Logger) (oauthRuntime, error) {
 	oauthConfig, enabled, err := config.LoadOAuth()
 	if err != nil || !enabled {
 		return oauthRuntime{}, err
@@ -103,7 +104,7 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 	}
 
 	service := appoauth.NewService(appoauth.NewMemoryStateRepository(), exchanger, tokens)
-	handler, err := oauthhttp.New(service, profiles, oauthConfig.PublicBaseURL)
+	handler, err := oauthhttp.NewWithLogger(service, profiles, oauthConfig.PublicBaseURL, logger)
 	if err != nil {
 		return oauthRuntime{}, err
 	}

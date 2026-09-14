@@ -69,7 +69,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		})
 	}
 
-	oauth, err := resolveOAuthRuntime(context.Background(), cfg, snapshot, catalogStore)
+	oauth, err := resolveOAuthRuntime(context.Background(), cfg, snapshot, catalogStore, logger)
 	if err != nil {
 		if catalogStore != nil {
 			_ = catalogStore.Close()
