@@ -241,7 +241,15 @@ func DecodeMessagesStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 			if err := json.Unmarshal(event.Data, &wire); err != nil {
 				return err
 			}
-			return fmt.Errorf("Anthropic stream error %s: %s", wire.Error.Type, wire.Error.Message)
+			stopped = true
+			return emit(llm.StreamEvent{
+				Type: llm.StreamEventError,
+				Error: &llm.StreamError{
+					Code:      wire.Error.Type,
+					Message:   wire.Error.Message,
+					Retryable: anthropicStreamErrorRetryable(wire.Error.Type),
+				},
+			})
 
 		default:
 			return fmt.Errorf("unsupported Anthropic stream event %q", envelope.Type)
@@ -254,6 +262,15 @@ func DecodeMessagesStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 		return fmt.Errorf("Anthropic stream ended before message_stop")
 	}
 	return nil
+}
+
+func anthropicStreamErrorRetryable(code string) bool {
+	switch code {
+	case "overloaded_error", "rate_limit_error":
+		return true
+	default:
+		return false
+	}
 }
 
 func mergeStreamUsage(dst *llm.Usage, wire streamUsage) {
@@ -400,7 +417,20 @@ func (e *MessagesStreamEncoder) Encode(event llm.StreamEvent) error {
 	case llm.StreamEventReasoningDelta:
 		return fmt.Errorf("reasoning stream events are not supported by Anthropic translation")
 	case llm.StreamEventError:
-		return fmt.Errorf("canonical stream error cannot be represented after translation")
+		if event.Error == nil {
+			return fmt.Errorf("stream error is missing error payload")
+		}
+		code := event.Error.Code
+		if code == "" {
+			code = "api_error"
+		}
+		return e.write("error", map[string]any{
+			"type": "error",
+			"error": map[string]any{
+				"type":    code,
+				"message": event.Error.Message,
+			},
+		})
 	default:
 		return fmt.Errorf("unsupported canonical stream event %q", event.Type)
 	}
