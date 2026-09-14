@@ -22,13 +22,16 @@ func AnthropicToResponsesResponse(response llm.Response) (llm.Response, error) {
 	}
 	for _, block := range response.Content {
 		switch block.(type) {
-		case llm.TextBlock, llm.ToolCallBlock:
-		case llm.ReasoningBlock:
-			return llm.Response{}, unsupported("thinking", "reasoning blocks cannot yet be represented losslessly in Responses output")
+		case llm.TextBlock, llm.ToolCallBlock, llm.ReasoningBlock:
 		default:
 			return llm.Response{}, unsupported("response content", fmt.Sprintf("block %T cannot be represented in Responses output", block))
 		}
 	}
+	content, err := reasoningSummariesForResponses(response.Content)
+	if err != nil {
+		return llm.Response{}, err
+	}
+	response.Content = content
 	response.Metadata = nil
 	response.Usage.Metadata = nil
 	return response, nil
