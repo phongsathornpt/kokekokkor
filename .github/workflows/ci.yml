@@ -30,5 +30,13 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race ./...
+      - name: Fuzz smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./internal/protocol/anthropic -run='^$' -fuzz='^FuzzDecodeMessagesRequest$' -fuzztime=2s
+          go test ./internal/protocol/gemini -run='^$' -fuzz='^FuzzDecodeGenerateContentRequest$' -fuzztime=2s
+          go test ./internal/protocol/openai -run='^$' -fuzz='^FuzzDecodeChatRequest$' -fuzztime=2s
+          go test ./internal/protocol/openai -run='^$' -fuzz='^FuzzDecodeResponsesRequest$' -fuzztime=2s
       - name: Build
         run: go build ./...
