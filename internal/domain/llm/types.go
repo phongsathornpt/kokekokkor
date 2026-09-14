@@ -111,6 +111,7 @@ type ReasoningConfig struct {
 	Mode         string
 	BudgetTokens int
 	Effort       string
+	Summary      string
 	Metadata     map[string]json.RawMessage
 }
 
