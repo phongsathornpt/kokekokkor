@@ -15,6 +15,7 @@ import (
 )
 
 const maxResponseBodyBytes = 64 << 20
+const maxResponseHeaderBytes = 64 << 10
 
 type bearerTokenResolver interface {
 	BearerToken(context.Context, string) (string, bool, error)
@@ -31,7 +32,7 @@ func New(defaultAnthropicVersion string) *Client {
 }
 
 func NewWithBearerTokenResolver(defaultAnthropicVersion string, bearerTokens bearerTokenResolver) *Client {
-	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, MaxIdleConns: 256, MaxIdleConnsPerHost: 64, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 0}
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, MaxIdleConns: 256, MaxIdleConnsPerHost: 64, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 0, MaxResponseHeaderBytes: maxResponseHeaderBytes}
 	return &Client{httpClient: &http.Client{Transport: transport}, defaultAnthropicVersion: defaultAnthropicVersion, bearerTokens: bearerTokens}
 }
 
