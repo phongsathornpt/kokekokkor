@@ -23,6 +23,29 @@ func TestDecodeMultilineData(t *testing.T) {
 	}
 }
 
+func TestDecodeRejectsOversizedAggregateEventData(t *testing.T) {
+	line := strings.Repeat("a", 1<<20)
+	var input strings.Builder
+	for range 9 {
+		input.WriteString("data: ")
+		input.WriteString(line)
+		input.WriteByte('\n')
+	}
+	input.WriteByte('\n')
+
+	emitted := false
+	err := Decode(strings.NewReader(input.String()), func(Event) error {
+		emitted = true
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "SSE event data exceeds") {
+		t.Fatalf("Decode() error = %v, want aggregate event size error", err)
+	}
+	if emitted {
+		t.Fatal("oversized SSE event was emitted")
+	}
+}
+
 func TestWriteMultilineData(t *testing.T) {
 	var output bytes.Buffer
 	if err := Write(&output, Event{Name: "delta", Data: []byte("first\nsecond")}); err != nil {
