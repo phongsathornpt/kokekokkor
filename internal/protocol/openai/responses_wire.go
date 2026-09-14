@@ -3,16 +3,25 @@ package openai
 import "encoding/json"
 
 type responsesRequest struct {
-	Model             string          `json:"model"`
-	Instructions      json.RawMessage `json:"instructions,omitempty"`
-	Input             json.RawMessage `json:"input,omitempty"`
-	Tools             []responseTool  `json:"tools,omitempty"`
-	ToolChoice        json.RawMessage `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool           `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens   *int            `json:"max_output_tokens,omitempty"`
-	Temperature       *float64        `json:"temperature,omitempty"`
-	TopP              *float64        `json:"top_p,omitempty"`
-	Stream            bool            `json:"stream,omitempty"`
+	Model             string                   `json:"model"`
+	Instructions      json.RawMessage          `json:"instructions,omitempty"`
+	Input             json.RawMessage          `json:"input,omitempty"`
+	Tools             []responseTool           `json:"tools,omitempty"`
+	ToolChoice        json.RawMessage          `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool                    `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens   *int                     `json:"max_output_tokens,omitempty"`
+	Temperature       *float64                 `json:"temperature,omitempty"`
+	TopP              *float64                 `json:"top_p,omitempty"`
+	Reasoning         *responseReasoningConfig `json:"reasoning,omitempty"`
+	Stream            bool                     `json:"stream,omitempty"`
+}
+
+type responseReasoningConfig struct {
+	Context         string `json:"context,omitempty"`
+	Effort          string `json:"effort,omitempty"`
+	GenerateSummary string `json:"generate_summary,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+	Summary         string `json:"summary,omitempty"`
 }
 
 type responseInputItem struct {
@@ -56,14 +65,20 @@ type responseObject struct {
 }
 
 type responseOutputItem struct {
-	ID        string               `json:"id"`
-	Type      string               `json:"type"`
-	Status    string               `json:"status,omitempty"`
-	Role      string               `json:"role,omitempty"`
-	Content   []responseOutputPart `json:"content,omitempty"`
-	CallID    string               `json:"call_id,omitempty"`
-	Name      string               `json:"name,omitempty"`
-	Arguments string               `json:"arguments,omitempty"`
+	ID        string                `json:"id"`
+	Type      string                `json:"type"`
+	Status    string                `json:"status,omitempty"`
+	Role      string                `json:"role,omitempty"`
+	Content   []responseOutputPart  `json:"content,omitempty"`
+	Summary   []responseSummaryPart `json:"summary,omitempty"`
+	CallID    string                `json:"call_id,omitempty"`
+	Name      string                `json:"name,omitempty"`
+	Arguments string                `json:"arguments,omitempty"`
+}
+
+type responseSummaryPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 type responseOutputPart struct {

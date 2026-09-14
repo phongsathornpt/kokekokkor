@@ -22,9 +22,11 @@ func OpenAIToGeminiRequest(request llm.Request) (llm.Request, error) {
 	if err := rejectMetadata(metadata); err != nil {
 		return llm.Request{}, err
 	}
-	if request.Reasoning != nil {
-		return llm.Request{}, unsupported("reasoning", "reasoning controls do not yet have a lossless OpenAI-to-Gemini mapping")
+	reasoning, err := openAIReasoningToGemini(request.Reasoning)
+	if err != nil {
+		return llm.Request{}, err
 	}
+	request.Reasoning = reasoning
 	if request.ResponseFormat != nil {
 		return llm.Request{}, unsupported("response_format", "structured-output translation is not implemented for Gemini yet")
 	}
@@ -150,10 +152,9 @@ func GeminiToOpenAIResponse(response llm.Response) (llm.Response, error) {
 		switch block.(type) {
 		case llm.DocumentBlock, llm.ImageBlock:
 			return llm.Response{}, unsupported("response media", "Chat Completions cannot represent Gemini media output")
-		case llm.ReasoningBlock:
-			return llm.Response{}, unsupported("thinking", "Gemini thought parts cannot yet be represented losslessly in Chat Completions")
 		}
 	}
+	response.Content = stripReasoningBlocks(response.Content)
 	response.Metadata = nil
 	response.Usage.Metadata = nil
 	return response, nil

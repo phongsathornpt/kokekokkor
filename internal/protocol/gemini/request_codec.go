@@ -27,7 +27,7 @@ func DecodeGenerateContentRequest(data []byte) (llm.Request, error) {
 	if err != nil {
 		return llm.Request{}, err
 	}
-	if raw := nestedExtras(data, "generationConfig", "maxOutputTokens", "temperature", "topP", "stopSequences"); len(raw) != 0 {
+	if raw := nestedExtras(data, "generationConfig", "maxOutputTokens", "temperature", "topP", "stopSequences", "thinkingConfig"); len(raw) != 0 {
 		metadata = putMetadata(metadata, "gemini.generationConfig", raw)
 	}
 	if raw := nestedExtras(data, "toolConfig", "functionCallingConfig"); len(raw) != 0 {
@@ -40,6 +40,13 @@ func DecodeGenerateContentRequest(data []byte) (llm.Request, error) {
 		request.Temperature = wire.GenerationConfig.Temperature
 		request.TopP = wire.GenerationConfig.TopP
 		request.Stop = append([]string(nil), wire.GenerationConfig.StopSequences...)
+		if wire.GenerationConfig.ThinkingConfig != nil {
+			reasoning, err := decodeGeminiThinking(*wire.GenerationConfig.ThinkingConfig)
+			if err != nil {
+				return llm.Request{}, err
+			}
+			request.Reasoning = reasoning
+		}
 	}
 	if wire.SystemInstruction != nil {
 		content, messageMetadata, err := decodeGeminiParts(wire.SystemInstruction.Parts, 0, nil)
@@ -132,12 +139,19 @@ func EncodeGenerateContentRequest(request llm.Request) ([]byte, error) {
 		}
 		wire.ToolConfig = &geminiToolConfig{FunctionCallingConfig: &config}
 	}
-	if request.MaxOutputTokens != nil || request.Temperature != nil || request.TopP != nil || len(request.Stop) != 0 {
+	if request.MaxOutputTokens != nil || request.Temperature != nil || request.TopP != nil || len(request.Stop) != 0 || request.Reasoning != nil {
 		wire.GenerationConfig = &geminiGenerationConfig{
 			MaxOutputTokens: request.MaxOutputTokens,
 			Temperature:     request.Temperature,
 			TopP:            request.TopP,
 			StopSequences:   append([]string(nil), request.Stop...),
+		}
+		if request.Reasoning != nil {
+			thinking, err := encodeGeminiThinking(*request.Reasoning)
+			if err != nil {
+				return nil, err
+			}
+			wire.GenerationConfig.ThinkingConfig = thinking
 		}
 	}
 	data, err := json.Marshal(wire)
@@ -145,6 +159,71 @@ func EncodeGenerateContentRequest(request llm.Request) ([]byte, error) {
 		return nil, fmt.Errorf("encode Gemini generateContent request: %w", err)
 	}
 	return data, nil
+}
+
+func decodeGeminiThinking(config geminiThinkingConfig) (*llm.ReasoningConfig, error) {
+	reasoning := &llm.ReasoningConfig{Enabled: true}
+	if config.IncludeThoughts != nil {
+		if *config.IncludeThoughts {
+			reasoning.Summary = "auto"
+		} else {
+			reasoning.Summary = "none"
+		}
+	}
+	if config.ThinkingBudget != nil {
+		reasoning.BudgetTokens = *config.ThinkingBudget
+		switch *config.ThinkingBudget {
+		case 0:
+			reasoning.Enabled = false
+		case -1:
+			reasoning.Mode = "dynamic"
+		}
+	}
+	if config.ThinkingLevel != "" {
+		reasoning.Effort = strings.ToLower(config.ThinkingLevel)
+	}
+	return reasoning, nil
+}
+
+func encodeGeminiThinking(reasoning llm.ReasoningConfig) (*geminiThinkingConfig, error) {
+	config := &geminiThinkingConfig{}
+	switch reasoning.Summary {
+	case "":
+	case "none":
+		value := false
+		config.IncludeThoughts = &value
+	case "auto", "concise", "detailed":
+		value := true
+		config.IncludeThoughts = &value
+	default:
+		return nil, fmt.Errorf("unsupported canonical reasoning summary %q for Gemini", reasoning.Summary)
+	}
+
+	switch {
+	case reasoning.BudgetTokens != 0:
+		if reasoning.BudgetTokens < -1 {
+			return nil, fmt.Errorf("invalid Gemini thinking budget %d", reasoning.BudgetTokens)
+		}
+		budget := reasoning.BudgetTokens
+		config.ThinkingBudget = &budget
+	case reasoning.Mode == "dynamic":
+		budget := -1
+		config.ThinkingBudget = &budget
+	case reasoning.Effort != "":
+		switch reasoning.Effort {
+		case "none":
+			budget := 0
+			config.ThinkingBudget = &budget
+		case "minimal", "low", "medium", "high":
+			config.ThinkingLevel = strings.ToUpper(reasoning.Effort)
+		default:
+			return nil, fmt.Errorf("unsupported Gemini thinking effort %q", reasoning.Effort)
+		}
+	case reasoning.Mode == "disabled":
+		budget := 0
+		config.ThinkingBudget = &budget
+	}
+	return config, nil
 }
 
 func decodeGeminiRole(role string) (llm.Role, error) {

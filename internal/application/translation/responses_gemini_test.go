@@ -41,7 +41,7 @@ func TestResponsesToGeminiRejectsMixedInstructionPrecedence(t *testing.T) {
 	}
 }
 
-func TestGeminiToResponsesResponseAllowsReasoningUsageButRejectsReasoningBlocks(t *testing.T) {
+func TestGeminiToResponsesResponseAllowsReasoningUsageAndSummary(t *testing.T) {
 	response := llm.Response{
 		Content:    []llm.ContentBlock{llm.TextBlock{Text: "hello"}},
 		StopReason: llm.StopReasonEndTurn,
@@ -51,8 +51,16 @@ func TestGeminiToResponsesResponseAllowsReasoningUsageButRejectsReasoningBlocks(
 		t.Fatalf("GeminiToResponsesResponse() error = %v", err)
 	}
 
-	response.Content = []llm.ContentBlock{llm.ReasoningBlock{Text: "thought"}}
-	if _, err := GeminiToResponsesResponse(response); !errors.Is(err, ErrUnsupported) {
-		t.Fatalf("GeminiToResponsesResponse() reasoning error = %v, want unsupported", err)
+	response.Content = []llm.ContentBlock{llm.ReasoningBlock{Text: "thought", Signature: "gemini-signature"}}
+	translated, err := GeminiToResponsesResponse(response)
+	if err != nil {
+		t.Fatalf("GeminiToResponsesResponse() reasoning error = %v", err)
+	}
+	if len(translated.Content) != 1 {
+		t.Fatalf("content = %#v", translated.Content)
+	}
+	reasoning, ok := translated.Content[0].(llm.ReasoningBlock)
+	if !ok || reasoning.Text != "thought" || reasoning.Signature != "" {
+		t.Fatalf("reasoning = %#v", translated.Content[0])
 	}
 }

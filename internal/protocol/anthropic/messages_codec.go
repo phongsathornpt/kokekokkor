@@ -8,16 +8,17 @@ import (
 )
 
 type messagesRequest struct {
-	Model       string             `json:"model"`
-	MaxTokens   *int               `json:"max_tokens,omitempty"`
-	System      json.RawMessage    `json:"system,omitempty"`
-	Messages    []anthropicMessage `json:"messages"`
-	Tools       []anthropicTool    `json:"tools,omitempty"`
-	ToolChoice  json.RawMessage    `json:"tool_choice,omitempty"`
-	Thinking    json.RawMessage    `json:"thinking,omitempty"`
-	Stop        []string           `json:"stop_sequences,omitempty"`
-	Temperature *float64           `json:"temperature,omitempty"`
-	TopP        *float64           `json:"top_p,omitempty"`
+	Model        string             `json:"model"`
+	MaxTokens    *int               `json:"max_tokens,omitempty"`
+	System       json.RawMessage    `json:"system,omitempty"`
+	Messages     []anthropicMessage `json:"messages"`
+	Tools        []anthropicTool    `json:"tools,omitempty"`
+	ToolChoice   json.RawMessage    `json:"tool_choice,omitempty"`
+	Thinking     json.RawMessage    `json:"thinking,omitempty"`
+	OutputConfig json.RawMessage    `json:"output_config,omitempty"`
+	Stop         []string           `json:"stop_sequences,omitempty"`
+	Temperature  *float64           `json:"temperature,omitempty"`
+	TopP         *float64           `json:"top_p,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -56,7 +57,7 @@ func DecodeMessagesRequest(data []byte) (llm.Request, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return llm.Request{}, fmt.Errorf("decode Anthropic Messages metadata: %w", err)
 	}
-	for _, key := range []string{"model", "max_tokens", "system", "messages", "tools", "tool_choice", "thinking", "stop_sequences", "temperature", "top_p"} {
+	for _, key := range []string{"model", "max_tokens", "system", "messages", "tools", "tool_choice", "thinking", "output_config", "stop_sequences", "temperature", "top_p"} {
 		delete(raw, key)
 	}
 
@@ -110,6 +111,24 @@ func DecodeMessagesRequest(data []byte) (llm.Request, error) {
 			return llm.Request{}, err
 		}
 		request.Reasoning = reasoning
+	}
+	if len(wire.OutputConfig) != 0 && string(wire.OutputConfig) != "null" {
+		effort, extras, err := decodeAnthropicOutputConfig(wire.OutputConfig)
+		if err != nil {
+			return llm.Request{}, err
+		}
+		if effort != "" {
+			if request.Reasoning == nil {
+				request.Reasoning = &llm.ReasoningConfig{Enabled: true}
+			}
+			request.Reasoning.Effort = effort
+		}
+		if len(extras) != 0 {
+			if request.Metadata == nil {
+				request.Metadata = make(map[string]json.RawMessage)
+			}
+			request.Metadata["anthropic.output_config"] = extras
+		}
 	}
 
 	if err := request.Validate(); err != nil {
@@ -171,6 +190,10 @@ func EncodeMessagesRequest(request llm.Request) ([]byte, error) {
 		return nil, err
 	}
 	wire.Thinking, err = encodeAnthropicThinking(request.Reasoning)
+	if err != nil {
+		return nil, err
+	}
+	wire.OutputConfig, err = encodeAnthropicOutputConfig(request.Reasoning)
 	if err != nil {
 		return nil, err
 	}
@@ -387,6 +410,7 @@ func decodeAnthropicThinking(raw json.RawMessage) (*llm.ReasoningConfig, error) 
 	var thinking struct {
 		Type         string `json:"type"`
 		BudgetTokens int    `json:"budget_tokens"`
+		Display      string `json:"display"`
 	}
 	if err := json.Unmarshal(raw, &thinking); err != nil {
 		return nil, fmt.Errorf("decode Anthropic thinking: %w", err)
@@ -397,19 +421,27 @@ func decodeAnthropicThinking(raw json.RawMessage) (*llm.ReasoningConfig, error) 
 	}
 	delete(metadata, "type")
 	delete(metadata, "budget_tokens")
-	return &llm.ReasoningConfig{
+	delete(metadata, "display")
+	reasoning := &llm.ReasoningConfig{
 		Enabled:      thinking.Type != "disabled",
 		Mode:         thinking.Type,
 		BudgetTokens: thinking.BudgetTokens,
 		Metadata:     metadata,
-	}, nil
+	}
+	switch thinking.Display {
+	case "summarized":
+		reasoning.Summary = "auto"
+	case "omitted":
+		reasoning.Summary = "none"
+	}
+	return reasoning, nil
 }
 
 func encodeAnthropicThinking(reasoning *llm.ReasoningConfig) (json.RawMessage, error) {
 	if reasoning == nil {
 		return nil, nil
 	}
-	value := make(map[string]json.RawMessage, len(reasoning.Metadata)+2)
+	value := make(map[string]json.RawMessage, len(reasoning.Metadata)+3)
 	for key, raw := range reasoning.Metadata {
 		value[key] = cloneAnthropicRaw(raw)
 	}
@@ -431,7 +463,57 @@ func encodeAnthropicThinking(reasoning *llm.ReasoningConfig) (json.RawMessage, e
 		budget, _ := json.Marshal(reasoning.BudgetTokens)
 		value["budget_tokens"] = budget
 	}
+	if mode != "disabled" {
+		var display string
+		switch reasoning.Summary {
+		case "":
+		case "none":
+			display = "omitted"
+		case "auto", "concise", "detailed":
+			display = "summarized"
+		default:
+			return nil, fmt.Errorf("unsupported Anthropic reasoning summary %q", reasoning.Summary)
+		}
+		if display != "" {
+			encodedDisplay, _ := json.Marshal(display)
+			value["display"] = encodedDisplay
+		}
+	}
 	return json.Marshal(value)
+}
+
+func decodeAnthropicOutputConfig(raw json.RawMessage) (string, json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return "", nil, fmt.Errorf("decode Anthropic output_config: %w", err)
+	}
+	var effort string
+	if value, ok := object["effort"]; ok {
+		if err := json.Unmarshal(value, &effort); err != nil {
+			return "", nil, fmt.Errorf("decode Anthropic output_config.effort: %w", err)
+		}
+		delete(object, "effort")
+	}
+	if len(object) == 0 {
+		return effort, nil, nil
+	}
+	extras, err := json.Marshal(object)
+	if err != nil {
+		return "", nil, err
+	}
+	return effort, extras, nil
+}
+
+func encodeAnthropicOutputConfig(reasoning *llm.ReasoningConfig) (json.RawMessage, error) {
+	if reasoning == nil || reasoning.Effort == "" {
+		return nil, nil
+	}
+	switch reasoning.Effort {
+	case "low", "medium", "high", "xhigh", "max":
+	default:
+		return nil, fmt.Errorf("unsupported Anthropic effort %q", reasoning.Effort)
+	}
+	return json.Marshal(map[string]string{"effort": reasoning.Effort})
 }
 
 func cloneAnthropicRaw(raw json.RawMessage) json.RawMessage {
