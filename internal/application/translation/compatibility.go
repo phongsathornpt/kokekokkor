@@ -85,9 +85,6 @@ func AnthropicToOpenAIRequest(request llm.Request) (llm.Request, error) {
 	if request.Reasoning != nil {
 		return llm.Request{}, unsupported("thinking", "Anthropic thinking controls cannot yet be represented losslessly in Chat Completions")
 	}
-	if request.ToolChoice != nil && request.ToolChoice.DisableParallel {
-		return llm.Request{}, unsupported("disable_parallel_tool_use", "parallel-tool policy translation is not implemented yet")
-	}
 	if err := rejectNestedMetadata(request); err != nil {
 		return llm.Request{}, err
 	}
