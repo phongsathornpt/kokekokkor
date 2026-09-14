@@ -153,11 +153,12 @@ Provider IDs must be unique across protocols. `/health/live` reflects process li
 ```bash
 make test
 make race
+make fuzz
 make vet
 make build
 ```
 
-CI enforces `gofmt`, `go vet ./...`, `go test -race ./...`, and `go build ./...` on pull requests.
+`make fuzz` runs each protocol request decoder fuzz target for 10 seconds by default; override with `FUZZ_TIME=30s make fuzz` for a longer local pass. CI enforces `gofmt`, `go vet ./...`, `go test -race ./...`, a short mutation-based fuzz smoke pass, and `go build ./...` on pull requests.
 
 ## Architecture
 
