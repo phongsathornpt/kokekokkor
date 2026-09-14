@@ -175,6 +175,19 @@ func (d *geminiStreamDecoder) ensureReasoning() error {
 	return d.emit(llm.StreamEvent{Type: llm.StreamEventContentStart, Index: block.index, Block: llm.ReasoningBlock{}})
 }
 
+func (d *geminiStreamDecoder) ensureReasoning() error {
+	if d.active != nil && d.active.kind == "reasoning" {
+		return nil
+	}
+	if err := d.closeActive(); err != nil {
+		return err
+	}
+	block := &geminiDecodeBlock{index: d.nextBlock, kind: "reasoning"}
+	d.nextBlock++
+	d.active = block
+	return d.emit(llm.StreamEvent{Type: llm.StreamEventContentStart, Index: block.index, Block: llm.ReasoningBlock{}})
+}
+
 func (d *geminiStreamDecoder) decodeFunctionCall(call geminiFunctionCall) error {
 	id := call.ID
 	if id == "" && d.active != nil && d.active.kind == "tool" && d.active.toolName == call.Name {
