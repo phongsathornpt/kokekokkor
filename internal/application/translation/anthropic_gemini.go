@@ -18,9 +18,6 @@ func AnthropicToGeminiRequest(request llm.Request) (llm.Request, error) {
 	if request.Reasoning != nil {
 		return llm.Request{}, unsupported("thinking", "Anthropic thinking controls are not translated to Gemini yet")
 	}
-	if request.ResponseFormat != nil {
-		return llm.Request{}, unsupported("response format", "structured-output translation to Gemini is not implemented")
-	}
 	if err := rejectNestedMetadata(request); err != nil {
 		return llm.Request{}, err
 	}
@@ -54,9 +51,6 @@ func GeminiToAnthropicRequest(request llm.Request) (llm.Request, error) {
 	}
 	if request.Reasoning != nil {
 		return llm.Request{}, unsupported("thinking", "Gemini thinking controls cannot yet be represented in Anthropic Messages")
-	}
-	if request.ResponseFormat != nil {
-		return llm.Request{}, unsupported("response format", "Gemini structured-output controls cannot yet be represented in Anthropic Messages")
 	}
 	if err := rejectNestedMetadata(request); err != nil {
 		return llm.Request{}, err

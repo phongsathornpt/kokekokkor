@@ -27,9 +27,6 @@ func OpenAIToGeminiRequest(request llm.Request) (llm.Request, error) {
 		return llm.Request{}, err
 	}
 	request.Reasoning = reasoning
-	if request.ResponseFormat != nil {
-		return llm.Request{}, unsupported("response_format", "structured-output translation is not implemented for Gemini yet")
-	}
 	if request.ToolChoice != nil && request.ToolChoice.DisableParallel {
 		return llm.Request{}, unsupported("parallel_tool_calls", "Gemini parallel-tool policy translation is not implemented")
 	}
@@ -71,9 +68,6 @@ func GeminiToOpenAIRequest(request llm.Request) (llm.Request, error) {
 	}
 	if request.Reasoning != nil {
 		return llm.Request{}, unsupported("thinking", "Gemini thinking controls cannot yet be represented in Chat Completions")
-	}
-	if request.ResponseFormat != nil {
-		return llm.Request{}, unsupported("response format", "Gemini structured-output controls cannot yet be represented in Chat Completions")
 	}
 	if request.ToolChoice != nil && request.ToolChoice.DisableParallel {
 		return llm.Request{}, unsupported("tool configuration", "Gemini parallel-tool policy cannot yet be represented in Chat Completions")

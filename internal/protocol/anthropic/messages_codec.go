@@ -113,7 +113,7 @@ func DecodeMessagesRequest(data []byte) (llm.Request, error) {
 		request.Reasoning = reasoning
 	}
 	if len(wire.OutputConfig) != 0 && string(wire.OutputConfig) != "null" {
-		effort, extras, err := decodeAnthropicOutputConfig(wire.OutputConfig)
+		effort, format, extras, err := decodeAnthropicOutputConfig(wire.OutputConfig)
 		if err != nil {
 			return llm.Request{}, err
 		}
@@ -123,6 +123,7 @@ func DecodeMessagesRequest(data []byte) (llm.Request, error) {
 			}
 			request.Reasoning.Effort = effort
 		}
+		request.ResponseFormat = format
 		if len(extras) != 0 {
 			if request.Metadata == nil {
 				request.Metadata = make(map[string]json.RawMessage)
@@ -193,7 +194,7 @@ func EncodeMessagesRequest(request llm.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	wire.OutputConfig, err = encodeAnthropicOutputConfig(request.Reasoning)
+	wire.OutputConfig, err = encodeAnthropicOutputConfig(request.Reasoning, request.ResponseFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -482,38 +483,60 @@ func encodeAnthropicThinking(reasoning *llm.ReasoningConfig) (json.RawMessage, e
 	return json.Marshal(value)
 }
 
-func decodeAnthropicOutputConfig(raw json.RawMessage) (string, json.RawMessage, error) {
+func decodeAnthropicOutputConfig(raw json.RawMessage) (string, *llm.ResponseFormat, json.RawMessage, error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil {
-		return "", nil, fmt.Errorf("decode Anthropic output_config: %w", err)
+		return "", nil, nil, fmt.Errorf("decode Anthropic output_config: %w", err)
 	}
 	var effort string
 	if value, ok := object["effort"]; ok {
 		if err := json.Unmarshal(value, &effort); err != nil {
-			return "", nil, fmt.Errorf("decode Anthropic output_config.effort: %w", err)
+			return "", nil, nil, fmt.Errorf("decode Anthropic output_config.effort: %w", err)
 		}
 		delete(object, "effort")
 	}
+	var format *llm.ResponseFormat
+	if value, ok := object["format"]; ok {
+		var wire struct {
+			Type   string          `json:"type"`
+			Schema json.RawMessage `json:"schema"`
+		}
+		if err := json.Unmarshal(value, &wire); err != nil {
+			return "", nil, nil, fmt.Errorf("decode Anthropic output_config.format: %w", err)
+		}
+		if wire.Type != "json_schema" {
+			return "", nil, nil, fmt.Errorf("unsupported Anthropic output format %q", wire.Type)
+		}
+		format = &llm.ResponseFormat{JSONSchema: cloneAnthropicRaw(wire.Schema), Strict: true}
+		delete(object, "format")
+	}
 	if len(object) == 0 {
-		return effort, nil, nil
+		return effort, format, nil, nil
 	}
 	extras, err := json.Marshal(object)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return effort, extras, nil
+	return effort, format, extras, nil
 }
 
-func encodeAnthropicOutputConfig(reasoning *llm.ReasoningConfig) (json.RawMessage, error) {
-	if reasoning == nil || reasoning.Effort == "" {
+func encodeAnthropicOutputConfig(reasoning *llm.ReasoningConfig, format *llm.ResponseFormat) (json.RawMessage, error) {
+	value := make(map[string]any, 2)
+	if reasoning != nil && reasoning.Effort != "" {
+		switch reasoning.Effort {
+		case "low", "medium", "high", "xhigh", "max":
+		default:
+			return nil, fmt.Errorf("unsupported Anthropic effort %q", reasoning.Effort)
+		}
+		value["effort"] = reasoning.Effort
+	}
+	if format != nil {
+		value["format"] = map[string]any{"type": "json_schema", "schema": json.RawMessage(format.JSONSchema)}
+	}
+	if len(value) == 0 {
 		return nil, nil
 	}
-	switch reasoning.Effort {
-	case "low", "medium", "high", "xhigh", "max":
-	default:
-		return nil, fmt.Errorf("unsupported Anthropic effort %q", reasoning.Effort)
-	}
-	return json.Marshal(map[string]string{"effort": reasoning.Effort})
+	return json.Marshal(value)
 }
 
 func cloneAnthropicRaw(raw json.RawMessage) json.RawMessage {
