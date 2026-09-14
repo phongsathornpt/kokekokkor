@@ -68,10 +68,6 @@ func GeminiToAnthropicRequest(request llm.Request) (llm.Request, error) {
 				if value.Source.Type != llm.MediaSourceBase64 {
 					return llm.Request{}, unsupported("document", "Gemini fileData documents cannot be forwarded to Anthropic losslessly")
 				}
-			case llm.ToolResultBlock:
-				if value.IsError {
-					return llm.Request{}, unsupported("function response error", "Gemini function responses have no portable Anthropic error flag mapping")
-				}
 			}
 		}
 	}
@@ -129,9 +125,6 @@ func checkAnthropicBlockForGemini(block llm.ContentBlock) error {
 			return unsupported("tool arguments", "Gemini function-call args must be a JSON object")
 		}
 	case llm.ToolResultBlock:
-		if value.IsError {
-			return unsupported("tool result error", "Gemini function response error semantics are not mapped yet")
-		}
 		if len(value.Content) != 1 {
 			return unsupported("tool result", "Gemini function responses currently require one text block")
 		}

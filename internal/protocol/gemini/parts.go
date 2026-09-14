@@ -64,15 +64,11 @@ func decodeGeminiParts(parts []geminiPart, messageIndex int, callNames map[strin
 			if id == "" {
 				return nil, nil, fmt.Errorf("Gemini function response %q has no call id and no matching prior call", part.FunctionResponse.Name)
 			}
-			text := "{}"
-			if len(part.FunctionResponse.Response) != 0 {
-				encoded, err := compactJSON(part.FunctionResponse.Response)
-				if err != nil {
-					return nil, nil, fmt.Errorf("Gemini function response %q: %w", part.FunctionResponse.Name, err)
-				}
-				text = encoded
+			text, isError, err := decodeToolResultResponse(part.FunctionResponse.Response)
+			if err != nil {
+				return nil, nil, fmt.Errorf("Gemini function response %q: %w", part.FunctionResponse.Name, err)
 			}
-			blocks = append(blocks, llm.ToolResultBlock{ToolCallID: id, Content: []llm.ContentBlock{llm.TextBlock{Text: text}}})
+			blocks = append(blocks, llm.ToolResultBlock{ToolCallID: id, Content: []llm.ContentBlock{llm.TextBlock{Text: text}}, IsError: isError})
 			continue
 		}
 
@@ -146,6 +142,13 @@ func encodeToolResultResponse(result llm.ToolResultBlock) (json.RawMessage, erro
 	if !ok {
 		return nil, fmt.Errorf("tool result %q must contain text for Gemini", result.ToolCallID)
 	}
+	if result.IsError {
+		encoded, err := json.Marshal(map[string]string{"error": text.Text})
+		if err != nil {
+			return nil, err
+		}
+		return encoded, nil
+	}
 	raw := json.RawMessage(text.Text)
 	if isJSONObject(raw) {
 		return append(json.RawMessage(nil), raw...), nil
@@ -155,6 +158,28 @@ func encodeToolResultResponse(result llm.ToolResultBlock) (json.RawMessage, erro
 		return nil, err
 	}
 	return encoded, nil
+}
+
+func decodeToolResultResponse(raw json.RawMessage) (string, bool, error) {
+	if len(raw) == 0 {
+		return "{}", false, nil
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return "", false, err
+	}
+	if errorValue, ok := object["error"]; ok {
+		if len(object) == 1 {
+			var text string
+			if json.Unmarshal(errorValue, &text) == nil {
+				return text, true, nil
+			}
+		}
+		encoded, err := compactJSON(raw)
+		return encoded, true, err
+	}
+	encoded, err := compactJSON(raw)
+	return encoded, false, err
 }
 
 func isJSONObject(raw json.RawMessage) bool {
