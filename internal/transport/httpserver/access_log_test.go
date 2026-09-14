@@ -3,6 +3,7 @@ package httpserver
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -60,7 +61,7 @@ func TestAccessLogResponseWriterUnwraps(t *testing.T) {
 	base := httptest.NewRecorder()
 	tracked := &accessLogResponseWriter{ResponseWriter: base}
 	controller := http.NewResponseController(tracked)
-	if err := controller.EnableFullDuplex(); err != nil && err != http.ErrNotSupported {
+	if err := controller.EnableFullDuplex(); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		t.Fatalf("EnableFullDuplex() error = %v", err)
 	}
 	if tracked.Unwrap() != base {
