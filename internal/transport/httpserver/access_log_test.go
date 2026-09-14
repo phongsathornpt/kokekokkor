@@ -2,7 +2,6 @@ package httpserver
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -64,9 +63,6 @@ func TestAccessLogResponseWriterUnwraps(t *testing.T) {
 	if err := controller.EnableFullDuplex(); err != nil && err != http.ErrNotSupported {
 		t.Fatalf("EnableFullDuplex() error = %v", err)
 	}
-
-	ctx := context.Background()
-	_ = ctx
 	if tracked.Unwrap() != base {
 		t.Fatal("Unwrap() did not return the underlying writer")
 	}
