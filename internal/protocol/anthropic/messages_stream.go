@@ -30,6 +30,8 @@ func DecodeMessagesStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 	started := false
 	stopped := false
 	var usage llm.Usage
+	thinkingBlocks := make(map[int]bool)
+	thinkingStarted := make(map[int]bool)
 	var pendingStop llm.StopReason
 	var pendingSequence string
 
@@ -75,11 +77,12 @@ func DecodeMessagesStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 			var wire struct {
 				Index        int `json:"index"`
 				ContentBlock struct {
-					Type  string          `json:"type"`
-					Text  string          `json:"text,omitempty"`
-					ID    string          `json:"id,omitempty"`
-					Name  string          `json:"name,omitempty"`
-					Input json.RawMessage `json:"input,omitempty"`
+					Type     string          `json:"type"`
+					Text     string          `json:"text,omitempty"`
+					Thinking string          `json:"thinking,omitempty"`
+					ID       string          `json:"id,omitempty"`
+					Name     string          `json:"name,omitempty"`
+					Input    json.RawMessage `json:"input,omitempty"`
 				} `json:"content_block"`
 			}
 			if err := json.Unmarshal(event.Data, &wire); err != nil {
@@ -112,8 +115,19 @@ func DecodeMessagesStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 						Arguments: arguments,
 					},
 				})
-			case "thinking", "redacted_thinking":
-				return fmt.Errorf("Anthropic thinking stream blocks are not supported by cross-protocol translation")
+			case "thinking":
+				thinkingBlocks[wire.Index] = true
+				if wire.ContentBlock.Thinking == "" {
+					return nil
+				}
+				thinkingStarted[wire.Index] = true
+				if err := emit(llm.StreamEvent{Type: llm.StreamEventContentStart, Index: wire.Index, Block: llm.ReasoningBlock{}}); err != nil {
+					return err
+				}
+				return emit(llm.StreamEvent{Type: llm.StreamEventReasoningDelta, Index: wire.Index, ReasoningDelta: wire.ContentBlock.Thinking})
+			case "redacted_thinking":
+				thinkingBlocks[wire.Index] = true
+				return nil
 			default:
 				return fmt.Errorf("unsupported Anthropic stream content block %q", wire.ContentBlock.Type)
 			}
@@ -142,8 +156,25 @@ func DecodeMessagesStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 						ArgumentsDelta: wire.Delta.PartialJSON,
 					},
 				})
-			case "thinking_delta", "signature_delta":
-				return fmt.Errorf("Anthropic thinking stream deltas are not supported by cross-protocol translation")
+			case "thinking_delta":
+				if !thinkingBlocks[wire.Index] {
+					return fmt.Errorf("Anthropic thinking delta for unopened block %d", wire.Index)
+				}
+				if !thinkingStarted[wire.Index] {
+					thinkingStarted[wire.Index] = true
+					if err := emit(llm.StreamEvent{Type: llm.StreamEventContentStart, Index: wire.Index, Block: llm.ReasoningBlock{}}); err != nil {
+						return err
+					}
+				}
+				if wire.Delta.Thinking == "" {
+					return nil
+				}
+				return emit(llm.StreamEvent{Type: llm.StreamEventReasoningDelta, Index: wire.Index, ReasoningDelta: wire.Delta.Thinking})
+			case "signature_delta":
+				if !thinkingBlocks[wire.Index] {
+					return fmt.Errorf("Anthropic signature delta for unopened block %d", wire.Index)
+				}
+				return nil
 			default:
 				return fmt.Errorf("unsupported Anthropic stream delta %q", wire.Delta.Type)
 			}
@@ -154,6 +185,14 @@ func DecodeMessagesStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 			}
 			if err := json.Unmarshal(event.Data, &wire); err != nil {
 				return err
+			}
+			if thinkingBlocks[wire.Index] {
+				delete(thinkingBlocks, wire.Index)
+				started := thinkingStarted[wire.Index]
+				delete(thinkingStarted, wire.Index)
+				if !started {
+					return nil
+				}
 			}
 			return emit(llm.StreamEvent{Type: llm.StreamEventContentStop, Index: wire.Index})
 
