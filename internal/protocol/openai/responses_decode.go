@@ -20,7 +20,7 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 	}
 	for _, key := range []string{
 		"model", "instructions", "input", "tools", "tool_choice",
-		"parallel_tool_calls", "max_output_tokens", "temperature", "top_p",
+		"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning",
 	} {
 		delete(raw, key)
 	}
@@ -31,6 +31,9 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 		Temperature:     wire.Temperature,
 		TopP:            wire.TopP,
 		Metadata:        raw,
+	}
+	if wire.Reasoning != nil {
+		request.Reasoning = decodeResponsesReasoning(*wire.Reasoning)
 	}
 
 	if len(wire.Instructions) != 0 && string(wire.Instructions) != "null" {
@@ -88,6 +91,28 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 		return llm.Request{}, fmt.Errorf("validate OpenAI Responses request: %w", err)
 	}
 	return request, nil
+}
+
+func decodeResponsesReasoning(wire responseReasoningConfig) *llm.ReasoningConfig {
+	summary := wire.Summary
+	if summary == "" {
+		summary = wire.GenerateSummary
+	}
+	reasoning := &llm.ReasoningConfig{
+		Enabled: wire.Effort != "none",
+		Effort:  wire.Effort,
+		Summary: summary,
+	}
+	if wire.Context != "" || wire.Mode != "" {
+		reasoning.Metadata = make(map[string]json.RawMessage, 2)
+		if wire.Context != "" {
+			reasoning.Metadata["openai.context"], _ = json.Marshal(wire.Context)
+		}
+		if wire.Mode != "" {
+			reasoning.Metadata["openai.mode"], _ = json.Marshal(wire.Mode)
+		}
+	}
+	return reasoning
 }
 
 func ResponsesRequestStreams(data []byte) (bool, error) {
