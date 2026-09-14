@@ -1,0 +1,475 @@
+name: patch-structured-outputs
+
+on:
+  push:
+    branches: [feat/structured-outputs]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.27.x
+      - name: Apply structured output support
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one match in {path}, found {count}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              "internal/protocol/openai/responses_wire.go",
+              '\tReasoning         *responseReasoningConfig `json:"reasoning,omitempty"`\n\tStream            bool                     `json:"stream,omitempty"`',
+              '\tReasoning         *responseReasoningConfig `json:"reasoning,omitempty"`\n\tText              json.RawMessage          `json:"text,omitempty"`\n\tStream            bool                     `json:"stream,omitempty"`',
+          )
+          replace(
+              "internal/protocol/openai/responses_decode.go",
+              '\t\t"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning",\n',
+              '\t\t"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning", "text",\n',
+          )
+          replace(
+              "internal/protocol/openai/responses_decode.go",
+              '''\tif wire.Reasoning != nil {\n\t\trequest.Reasoning = decodeResponsesReasoning(*wire.Reasoning)\n\t}\n''',
+              '''\tif wire.Reasoning != nil {\n\t\trequest.Reasoning = decodeResponsesReasoning(*wire.Reasoning)\n\t}\n\tif len(wire.Text) != 0 && string(wire.Text) != "null" {\n\t\tformat, extras, err := decodeResponsesTextConfig(wire.Text)\n\t\tif err != nil {\n\t\t\treturn llm.Request{}, err\n\t\t}\n\t\trequest.ResponseFormat = format\n\t\tif len(extras) != 0 {\n\t\t\tif request.Metadata == nil {\n\t\t\t\trequest.Metadata = make(map[string]json.RawMessage)\n\t\t\t}\n\t\t\trequest.Metadata["openai.responses.text"] = extras\n\t\t}\n\t}\n''',
+          )
+
+          Path("internal/protocol/openai/responses_format.go").write_text(r'''package openai
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+
+    "github.com/phongsathornpt/kokekokkor/internal/domain/llm"
+)
+
+func decodeResponsesTextConfig(raw json.RawMessage) (*llm.ResponseFormat, json.RawMessage, error) {
+    trimmed := bytes.TrimSpace(raw)
+    if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+        return nil, nil, nil
+    }
+    var object map[string]json.RawMessage
+    if err := json.Unmarshal(trimmed, &object); err != nil {
+        return nil, nil, fmt.Errorf("decode Responses text config: %w", err)
+    }
+
+    var responseFormat *llm.ResponseFormat
+    if formatRaw, ok := object["format"]; ok {
+        delete(object, "format")
+        var format struct {
+            Type        string          `json:"type"`
+            Name        string          `json:"name"`
+            Description string          `json:"description"`
+            Schema      json.RawMessage `json:"schema"`
+            Strict      bool            `json:"strict"`
+        }
+        if err := json.Unmarshal(formatRaw, &format); err != nil {
+            return nil, nil, fmt.Errorf("decode Responses text.format: %w", err)
+        }
+        switch format.Type {
+        case "", "text":
+        case "json_schema":
+            responseFormat = &llm.ResponseFormat{
+                Name:        format.Name,
+                Description: format.Description,
+                JSONSchema:  cloneRaw(format.Schema),
+                Strict:      format.Strict,
+            }
+        default:
+            object["format"] = cloneRaw(formatRaw)
+        }
+    }
+    if len(object) == 0 {
+        return responseFormat, nil, nil
+    }
+    extras, err := json.Marshal(object)
+    if err != nil {
+        return nil, nil, err
+    }
+    return responseFormat, extras, nil
+}
+''')
+
+          replace(
+              "internal/protocol/openai/chat_response_format.go",
+              '''\tif format == nil {\n\t\treturn nil, nil\n\t}\n\treturn json.Marshal(map[string]any{''',
+              '''\tif format == nil {\n\t\treturn nil, nil\n\t}\n\tname := format.Name\n\tif name == "" {\n\t\tname = "structured_output"\n\t}\n\treturn json.Marshal(map[string]any{''',
+          )
+          replace(
+              "internal/protocol/openai/chat_response_format.go",
+              '"name":        format.Name,',
+              '"name":        name,',
+          )
+
+          replace(
+              "internal/protocol/anthropic/messages_codec.go",
+              '''\t\teffort, extras, err := decodeAnthropicOutputConfig(wire.OutputConfig)\n\t\tif err != nil {''',
+              '''\t\teffort, format, extras, err := decodeAnthropicOutputConfig(wire.OutputConfig)\n\t\tif err != nil {''',
+          )
+          replace(
+              "internal/protocol/anthropic/messages_codec.go",
+              '''\t\tif effort != "" {\n\t\t\tif request.Reasoning == nil {\n\t\t\t\trequest.Reasoning = &llm.ReasoningConfig{Enabled: true}\n\t\t\t}\n\t\t\trequest.Reasoning.Effort = effort\n\t\t}\n\t\tif len(extras) != 0 {''',
+              '''\t\tif effort != "" {\n\t\t\tif request.Reasoning == nil {\n\t\t\t\trequest.Reasoning = &llm.ReasoningConfig{Enabled: true}\n\t\t\t}\n\t\t\trequest.Reasoning.Effort = effort\n\t\t}\n\t\trequest.ResponseFormat = format\n\t\tif len(extras) != 0 {''',
+          )
+          replace(
+              "internal/protocol/anthropic/messages_codec.go",
+              'wire.OutputConfig, err = encodeAnthropicOutputConfig(request.Reasoning)',
+              'wire.OutputConfig, err = encodeAnthropicOutputConfig(request.Reasoning, request.ResponseFormat)',
+          )
+          start = Path("internal/protocol/anthropic/messages_codec.go").read_text()
+          old_start = start.index('func decodeAnthropicOutputConfig(')
+          old_end = start.index('\nfunc cloneAnthropicRaw(', old_start)
+          replacement = r'''func decodeAnthropicOutputConfig(raw json.RawMessage) (string, *llm.ResponseFormat, json.RawMessage, error) {
+    var object map[string]json.RawMessage
+    if err := json.Unmarshal(raw, &object); err != nil {
+        return "", nil, nil, fmt.Errorf("decode Anthropic output_config: %w", err)
+    }
+    var effort string
+    if value, ok := object["effort"]; ok {
+        if err := json.Unmarshal(value, &effort); err != nil {
+            return "", nil, nil, fmt.Errorf("decode Anthropic output_config.effort: %w", err)
+        }
+        delete(object, "effort")
+    }
+    var responseFormat *llm.ResponseFormat
+    if value, ok := object["format"]; ok {
+        var format struct {
+            Type   string          `json:"type"`
+            Schema json.RawMessage `json:"schema"`
+        }
+        if err := json.Unmarshal(value, &format); err != nil {
+            return "", nil, nil, fmt.Errorf("decode Anthropic output_config.format: %w", err)
+        }
+        if format.Type != "json_schema" {
+            return "", nil, nil, fmt.Errorf("unsupported Anthropic output format %q", format.Type)
+        }
+        responseFormat = &llm.ResponseFormat{JSONSchema: cloneAnthropicRaw(format.Schema), Strict: true}
+        delete(object, "format")
+    }
+    if len(object) == 0 {
+        return effort, responseFormat, nil, nil
+    }
+    extras, err := json.Marshal(object)
+    if err != nil {
+        return "", nil, nil, err
+    }
+    return effort, responseFormat, extras, nil
+}
+
+func encodeAnthropicOutputConfig(reasoning *llm.ReasoningConfig, format *llm.ResponseFormat) (json.RawMessage, error) {
+    value := make(map[string]any, 2)
+    if reasoning != nil && reasoning.Effort != "" {
+        switch reasoning.Effort {
+        case "low", "medium", "high", "xhigh", "max":
+        default:
+            return nil, fmt.Errorf("unsupported Anthropic effort %q", reasoning.Effort)
+        }
+        value["effort"] = reasoning.Effort
+    }
+    if format != nil {
+        value["format"] = map[string]any{
+            "type":   "json_schema",
+            "schema": json.RawMessage(format.JSONSchema),
+        }
+    }
+    if len(value) == 0 {
+        return nil, nil
+    }
+    return json.Marshal(value)
+}
+'''
+          p = Path("internal/protocol/anthropic/messages_codec.go")
+          text = p.read_text()
+          p.write_text(text[:old_start] + replacement + text[old_end:])
+
+          replace(
+              "internal/protocol/gemini/wire.go",
+              '''\tStopSequences   []string              `json:"stopSequences,omitempty"`\n\tThinkingConfig  *geminiThinkingConfig `json:"thinkingConfig,omitempty"`''',
+              '''\tStopSequences   []string              `json:"stopSequences,omitempty"`\n\tThinkingConfig  *geminiThinkingConfig `json:"thinkingConfig,omitempty"`\n\tResponseFormat  json.RawMessage       `json:"responseFormat,omitempty"`''',
+          )
+          replace(
+              "internal/protocol/gemini/request_codec.go",
+              'nestedExtras(data, "generationConfig", "maxOutputTokens", "temperature", "topP", "stopSequences", "thinkingConfig")',
+              'nestedExtras(data, "generationConfig", "maxOutputTokens", "temperature", "topP", "stopSequences", "thinkingConfig", "responseFormat")',
+          )
+          replace(
+              "internal/protocol/gemini/request_codec.go",
+              '''\t\tif wire.GenerationConfig.ThinkingConfig != nil {\n\t\t\treasoning, err := decodeGeminiThinking(*wire.GenerationConfig.ThinkingConfig)\n\t\t\tif err != nil {\n\t\t\t\treturn llm.Request{}, err\n\t\t\t}\n\t\t\trequest.Reasoning = reasoning\n\t\t}\n''',
+              '''\t\tif wire.GenerationConfig.ThinkingConfig != nil {\n\t\t\treasoning, err := decodeGeminiThinking(*wire.GenerationConfig.ThinkingConfig)\n\t\t\tif err != nil {\n\t\t\t\treturn llm.Request{}, err\n\t\t\t}\n\t\t\trequest.Reasoning = reasoning\n\t\t}\n\t\tif len(wire.GenerationConfig.ResponseFormat) != 0 {\n\t\t\tformat, err := decodeGeminiResponseFormat(wire.GenerationConfig.ResponseFormat)\n\t\t\tif err != nil {\n\t\t\t\treturn llm.Request{}, err\n\t\t\t}\n\t\t\trequest.ResponseFormat = format\n\t\t}\n''',
+          )
+          replace(
+              "internal/protocol/gemini/request_codec.go",
+              'if request.MaxOutputTokens != nil || request.Temperature != nil || request.TopP != nil || len(request.Stop) != 0 || request.Reasoning != nil {',
+              'if request.MaxOutputTokens != nil || request.Temperature != nil || request.TopP != nil || len(request.Stop) != 0 || request.Reasoning != nil || request.ResponseFormat != nil {',
+          )
+          replace(
+              "internal/protocol/gemini/request_codec.go",
+              '''\t\tif request.Reasoning != nil {\n\t\t\tthinking, err := encodeGeminiThinking(*request.Reasoning)\n\t\t\tif err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n\t\t\twire.GenerationConfig.ThinkingConfig = thinking\n\t\t}\n''',
+              '''\t\tif request.Reasoning != nil {\n\t\t\tthinking, err := encodeGeminiThinking(*request.Reasoning)\n\t\t\tif err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n\t\t\twire.GenerationConfig.ThinkingConfig = thinking\n\t\t}\n\t\tif request.ResponseFormat != nil {\n\t\t\tformat, err := encodeGeminiResponseFormat(request.ResponseFormat)\n\t\t\tif err != nil {\n\t\t\t\treturn nil, err\n\t\t\t}\n\t\t\twire.GenerationConfig.ResponseFormat = format\n\t\t}\n''',
+          )
+          Path("internal/protocol/gemini/response_format.go").write_text(r'''package gemini
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+
+    "github.com/phongsathornpt/kokekokkor/internal/domain/llm"
+)
+
+func decodeGeminiResponseFormat(raw json.RawMessage) (*llm.ResponseFormat, error) {
+    trimmed := bytes.TrimSpace(raw)
+    if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+        return nil, nil
+    }
+    var object map[string]json.RawMessage
+    if err := json.Unmarshal(trimmed, &object); err != nil {
+        return nil, fmt.Errorf("decode Gemini responseFormat: %w", err)
+    }
+    textRaw, ok := object["text"]
+    if !ok || len(object) != 1 {
+        return nil, fmt.Errorf("Gemini responseFormat translation supports text output only")
+    }
+    var text struct {
+        MIMEType string          `json:"mimeType"`
+        Schema   json.RawMessage `json:"schema"`
+    }
+    if err := json.Unmarshal(textRaw, &text); err != nil {
+        return nil, fmt.Errorf("decode Gemini responseFormat.text: %w", err)
+    }
+    if text.MIMEType != "APPLICATION_JSON" && text.MIMEType != "application/json" {
+        return nil, fmt.Errorf("unsupported Gemini responseFormat text mimeType %q", text.MIMEType)
+    }
+    if len(text.Schema) == 0 || !json.Valid(text.Schema) {
+        return nil, fmt.Errorf("Gemini JSON responseFormat requires a valid schema")
+    }
+    return &llm.ResponseFormat{JSONSchema: append(json.RawMessage(nil), text.Schema...), Strict: true}, nil
+}
+
+func encodeGeminiResponseFormat(format *llm.ResponseFormat) (json.RawMessage, error) {
+    if format == nil {
+        return nil, nil
+    }
+    if len(format.JSONSchema) == 0 || !json.Valid(format.JSONSchema) {
+        return nil, fmt.Errorf("Gemini structured output requires a valid JSON schema")
+    }
+    return json.Marshal(map[string]any{
+        "text": map[string]any{
+            "mimeType": "APPLICATION_JSON",
+            "schema":   json.RawMessage(format.JSONSchema),
+        },
+    })
+}
+''')
+
+          for path, old in [
+              ("internal/application/translation/compatibility.go", '''\tif request.ResponseFormat != nil {\n\t\treturn llm.Request{}, unsupported("response_format", "structured-output translation is not implemented yet")\n\t}\n'''),
+              ("internal/application/translation/gemini.go", '''\tif request.ResponseFormat != nil {\n\t\treturn llm.Request{}, unsupported("response_format", "structured-output translation is not implemented for Gemini yet")\n\t}\n'''),
+              ("internal/application/translation/gemini.go", '''\tif request.ResponseFormat != nil {\n\t\treturn llm.Request{}, unsupported("response format", "Gemini structured-output controls cannot yet be represented in Chat Completions")\n\t}\n'''),
+              ("internal/application/translation/responses_gemini.go", '''\tif request.ResponseFormat != nil {\n\t\treturn llm.Request{}, unsupported("response_format", "Responses structured-output translation to Gemini is not implemented yet")\n\t}\n'''),
+              ("internal/application/translation/anthropic_gemini.go", '''\tif request.ResponseFormat != nil {\n\t\treturn llm.Request{}, unsupported("response format", "structured-output translation to Gemini is not implemented")\n\t}\n'''),
+              ("internal/application/translation/anthropic_gemini.go", '''\tif request.ResponseFormat != nil {\n\t\treturn llm.Request{}, unsupported("response format", "Gemini structured-output controls cannot yet be represented in Anthropic Messages")\n\t}\n'''),
+          ]:
+              replace(path, old, "")
+
+          replace(
+              "internal/application/translation/gemini_test.go",
+              '''\t\t{\n\t\t\tname: "structured output",\n\t\t\trequest: llm.Request{\n\t\t\t\tMessages:       []llm.Message{{Role: llm.RoleUser, Content: []llm.ContentBlock{llm.TextBlock{Text: "hi"}}}},\n\t\t\t\tResponseFormat: &llm.ResponseFormat{JSONSchema: json.RawMessage(`{"type":"object"}`)},\n\t\t\t},\n\t\t},\n''',
+              "",
+          )
+
+          Path("internal/protocol/openai/structured_output_test.go").write_text(r'''package openai
+
+import (
+    "encoding/json"
+    "testing"
+
+    "github.com/phongsathornpt/kokekokkor/internal/domain/llm"
+)
+
+func TestDecodeResponsesRequestStructuredOutput(t *testing.T) {
+    request, err := DecodeResponsesRequest([]byte(`{"model":"gpt","input":"hi","text":{"format":{"type":"json_schema","name":"answer","description":"answer shape","schema":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false},"strict":true}}}`))
+    if err != nil {
+        t.Fatalf("DecodeResponsesRequest() error = %v", err)
+    }
+    if request.ResponseFormat == nil || request.ResponseFormat.Name != "answer" || request.ResponseFormat.Description != "answer shape" || !request.ResponseFormat.Strict {
+        t.Fatalf("response format = %#v", request.ResponseFormat)
+    }
+    if !json.Valid(request.ResponseFormat.JSONSchema) {
+        t.Fatalf("schema = %s", request.ResponseFormat.JSONSchema)
+    }
+}
+
+func TestEncodeChatResponseFormatSynthesizesName(t *testing.T) {
+    raw, err := encodeChatResponseFormat(&llm.ResponseFormat{JSONSchema: json.RawMessage(`{"type":"object"}`), Strict: true})
+    if err != nil {
+        t.Fatalf("encodeChatResponseFormat() error = %v", err)
+    }
+    var wire struct {
+        JSONSchema struct {
+            Name string `json:"name"`
+        } `json:"json_schema"`
+    }
+    if err := json.Unmarshal(raw, &wire); err != nil {
+        t.Fatal(err)
+    }
+    if wire.JSONSchema.Name != "structured_output" {
+        t.Fatalf("name = %q", wire.JSONSchema.Name)
+    }
+}
+''')
+
+          Path("internal/protocol/anthropic/structured_output_test.go").write_text(r'''package anthropic
+
+import (
+    "encoding/json"
+    "testing"
+
+    "github.com/phongsathornpt/kokekokkor/internal/domain/llm"
+)
+
+func TestMessagesStructuredOutputRoundTrip(t *testing.T) {
+    decoded, err := DecodeMessagesRequest([]byte(`{"model":"claude","max_tokens":64,"messages":[{"role":"user","content":"hi"}],"output_config":{"effort":"high","format":{"type":"json_schema","schema":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"]}}}}`))
+    if err != nil {
+        t.Fatalf("DecodeMessagesRequest() error = %v", err)
+    }
+    if decoded.ResponseFormat == nil || !decoded.ResponseFormat.Strict || decoded.Reasoning == nil || decoded.Reasoning.Effort != "high" {
+        t.Fatalf("decoded controls = format %#v reasoning %#v", decoded.ResponseFormat, decoded.Reasoning)
+    }
+
+    maxTokens := 64
+    encoded, err := EncodeMessagesRequest(llm.Request{
+        Model: "claude",
+        MaxOutputTokens: &maxTokens,
+        Messages: []llm.Message{{Role: llm.RoleUser, Content: []llm.ContentBlock{llm.TextBlock{Text: "hi"}}}},
+        Reasoning: &llm.ReasoningConfig{Enabled: true, Mode: "adaptive", Effort: "high"},
+        ResponseFormat: &llm.ResponseFormat{JSONSchema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`), Strict: true},
+    })
+    if err != nil {
+        t.Fatalf("EncodeMessagesRequest() error = %v", err)
+    }
+    var wire struct {
+        OutputConfig struct {
+            Effort string `json:"effort"`
+            Format struct {
+                Type string `json:"type"`
+                Schema json.RawMessage `json:"schema"`
+            } `json:"format"`
+        } `json:"output_config"`
+    }
+    if err := json.Unmarshal(encoded, &wire); err != nil {
+        t.Fatal(err)
+    }
+    if wire.OutputConfig.Effort != "high" || wire.OutputConfig.Format.Type != "json_schema" || !json.Valid(wire.OutputConfig.Format.Schema) {
+        t.Fatalf("output_config = %#v", wire.OutputConfig)
+    }
+}
+''')
+
+          Path("internal/protocol/gemini/structured_output_test.go").write_text(r'''package gemini
+
+import (
+    "encoding/json"
+    "testing"
+
+    "github.com/phongsathornpt/kokekokkor/internal/domain/llm"
+)
+
+func TestGenerateContentStructuredOutputRoundTrip(t *testing.T) {
+    decoded, err := DecodeGenerateContentRequest([]byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"responseFormat":{"text":{"mimeType":"APPLICATION_JSON","schema":{"type":"object","properties":{"ok":{"type":"boolean"}}}}}}}`))
+    if err != nil {
+        t.Fatalf("DecodeGenerateContentRequest() error = %v", err)
+    }
+    if decoded.ResponseFormat == nil || !decoded.ResponseFormat.Strict || !json.Valid(decoded.ResponseFormat.JSONSchema) {
+        t.Fatalf("response format = %#v", decoded.ResponseFormat)
+    }
+
+    encoded, err := EncodeGenerateContentRequest(llm.Request{
+        Messages: []llm.Message{{Role: llm.RoleUser, Content: []llm.ContentBlock{llm.TextBlock{Text: "hi"}}}},
+        ResponseFormat: &llm.ResponseFormat{JSONSchema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`), Strict: true},
+    })
+    if err != nil {
+        t.Fatalf("EncodeGenerateContentRequest() error = %v", err)
+    }
+    var wire map[string]any
+    if err := json.Unmarshal(encoded, &wire); err != nil {
+        t.Fatal(err)
+    }
+    generation := wire["generationConfig"].(map[string]any)
+    responseFormat := generation["responseFormat"].(map[string]any)
+    text := responseFormat["text"].(map[string]any)
+    if text["mimeType"] != "APPLICATION_JSON" || text["schema"] == nil {
+        t.Fatalf("responseFormat = %#v", responseFormat)
+    }
+}
+''')
+
+          Path("internal/application/translation/structured_output_test.go").write_text(r'''package translation
+
+import (
+    "encoding/json"
+    "testing"
+
+    "github.com/phongsathornpt/kokekokkor/internal/domain/llm"
+)
+
+func TestStructuredOutputPortableRequestPaths(t *testing.T) {
+    maxTokens := 64
+    base := llm.Request{
+        MaxOutputTokens: &maxTokens,
+        Messages: []llm.Message{{Role: llm.RoleUser, Content: []llm.ContentBlock{llm.TextBlock{Text: "hi"}}}},
+        ResponseFormat: &llm.ResponseFormat{
+            Name: "answer",
+            JSONSchema: json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"]}`),
+            Strict: true,
+        },
+    }
+    tests := []struct {
+        name string
+        fn func(llm.Request) (llm.Request, error)
+    }{
+        {"openai to anthropic", OpenAIToAnthropicRequest},
+        {"anthropic to openai", AnthropicToOpenAIRequest},
+        {"openai to gemini", OpenAIToGeminiRequest},
+        {"gemini to openai", GeminiToOpenAIRequest},
+        {"responses to anthropic", ResponsesToAnthropicRequest},
+        {"responses to gemini", ResponsesToGeminiRequest},
+        {"anthropic to gemini", AnthropicToGeminiRequest},
+        {"gemini to anthropic", GeminiToAnthropicRequest},
+    }
+    for _, test := range tests {
+        t.Run(test.name, func(t *testing.T) {
+            translated, err := test.fn(base)
+            if err != nil {
+                t.Fatalf("translation error = %v", err)
+            }
+            if translated.ResponseFormat == nil || !json.Valid(translated.ResponseFormat.JSONSchema) {
+                t.Fatalf("response format = %#v", translated.ResponseFormat)
+            }
+        })
+    }
+}
+''')
+          PY
+
+          gofmt -w internal/protocol/openai internal/protocol/anthropic internal/protocol/gemini internal/application/translation
+          go test ./internal/protocol/openai ./internal/protocol/anthropic ./internal/protocol/gemini ./internal/application/translation
+          git diff --check
+          git rm .github/workflows/patch-structured-outputs.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/protocol/openai internal/protocol/anthropic internal/protocol/gemini internal/application/translation
+          git commit -m 'feat: translate structured JSON outputs'
+          git push origin HEAD:feat/structured-outputs
