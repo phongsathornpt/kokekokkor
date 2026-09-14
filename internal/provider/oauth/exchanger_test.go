@@ -16,6 +16,24 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestNewExchangerUsesBoundedDefaultClient(t *testing.T) {
+	exchanger := NewExchanger(nil)
+	if exchanger.client == nil {
+		t.Fatal("client = nil")
+	}
+	if exchanger.client.Timeout != defaultTokenRequestTimeout {
+		t.Fatalf("Timeout = %v, want %v", exchanger.client.Timeout, defaultTokenRequestTimeout)
+	}
+}
+
+func TestExchangerPreservesInjectedClient(t *testing.T) {
+	client := &http.Client{Timeout: time.Minute}
+	exchanger := NewExchanger(client)
+	if exchanger.client != client {
+		t.Fatal("NewExchanger replaced injected client")
+	}
+}
+
 func TestExchangerPostsAuthorizationCodeWithPKCE(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodPost || r.URL.String() != "https://login.example.com/token" {

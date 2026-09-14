@@ -15,6 +15,8 @@ import (
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
 )
 
+const defaultTokenRequestTimeout = 15 * time.Second
+
 type Exchanger struct {
 	client *http.Client
 	now    func() time.Time
@@ -22,7 +24,7 @@ type Exchanger struct {
 
 func NewExchanger(client *http.Client) *Exchanger {
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: defaultTokenRequestTimeout}
 	}
 	return &Exchanger{client: client, now: time.Now}
 }
