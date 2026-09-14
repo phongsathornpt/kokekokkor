@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -32,8 +33,12 @@ func NewWithAdmin(addr, gatewayAPIKey string, ready func() bool, openAI, anthrop
 	})
 
 	if oauth != nil {
-		mux.Handle("GET /oauth/{provider}/start", oauth)
 		mux.Handle("GET /oauth/{provider}/callback", oauth)
+		if admin != nil {
+			mux.HandleFunc("GET /oauth/{provider}/start", func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "/admin/oauth/"+url.PathEscape(r.PathValue("provider"))+"/start", http.StatusSeeOther)
+			})
+		}
 	}
 	if admin != nil {
 		mux.Handle("/admin", admin)
