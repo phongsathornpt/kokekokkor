@@ -64,9 +64,11 @@ func OpenAIToAnthropicRequest(request llm.Request) (llm.Request, error) {
 	if request.ResponseFormat != nil {
 		return llm.Request{}, unsupported("response_format", "structured-output translation is not implemented yet")
 	}
-	if request.Reasoning != nil {
-		return llm.Request{}, unsupported("reasoning", "reasoning controls do not yet have a lossless OpenAI-to-Anthropic mapping")
+	reasoning, err := openAIReasoningToAnthropic(request.Reasoning)
+	if err != nil {
+		return llm.Request{}, err
 	}
+	request.Reasoning = reasoning
 	if err := rejectNestedMetadata(request); err != nil {
 		return llm.Request{}, err
 	}
@@ -135,11 +137,7 @@ func AnthropicToOpenAIResponse(response llm.Response) (llm.Response, error) {
 	if response.StopReason == llm.StopReasonUnknown {
 		return llm.Response{}, unsupported("stop_reason", "upstream stop reason has no Chat Completions finish_reason mapping")
 	}
-	for _, block := range response.Content {
-		if _, ok := block.(llm.ReasoningBlock); ok {
-			return llm.Response{}, unsupported("thinking", "reasoning blocks cannot yet be represented losslessly in Chat Completions")
-		}
-	}
+	response.Content = stripReasoningBlocks(response.Content)
 	response.Metadata = nil
 	response.Usage.Metadata = nil
 	return response, nil
