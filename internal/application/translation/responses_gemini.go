@@ -19,9 +19,6 @@ func ResponsesToGeminiRequest(request llm.Request) (llm.Request, error) {
 		return llm.Request{}, err
 	}
 	request.Reasoning = reasoning
-	if request.ResponseFormat != nil {
-		return llm.Request{}, unsupported("response_format", "Responses structured-output translation to Gemini is not implemented yet")
-	}
 	if request.ToolChoice != nil && request.ToolChoice.DisableParallel {
 		return llm.Request{}, unsupported("parallel_tool_calls", "Gemini parallel-tool policy translation is not implemented")
 	}

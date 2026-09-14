@@ -20,7 +20,7 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 	}
 	for _, key := range []string{
 		"model", "instructions", "input", "tools", "tool_choice",
-		"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning",
+		"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning", "text",
 	} {
 		delete(raw, key)
 	}
@@ -34,6 +34,19 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 	}
 	if wire.Reasoning != nil {
 		request.Reasoning = decodeResponsesReasoning(*wire.Reasoning)
+	}
+	if len(wire.Text) != 0 && string(wire.Text) != "null" {
+		format, extras, err := decodeResponsesTextConfig(wire.Text)
+		if err != nil {
+			return llm.Request{}, err
+		}
+		request.ResponseFormat = format
+		if len(extras) != 0 {
+			if request.Metadata == nil {
+				request.Metadata = make(map[string]json.RawMessage)
+			}
+			request.Metadata["openai.responses.text"] = extras
+		}
 	}
 
 	if len(wire.Instructions) != 0 && string(wire.Instructions) != "null" {

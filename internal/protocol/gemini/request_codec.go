@@ -27,7 +27,7 @@ func DecodeGenerateContentRequest(data []byte) (llm.Request, error) {
 	if err != nil {
 		return llm.Request{}, err
 	}
-	if raw := nestedExtras(data, "generationConfig", "maxOutputTokens", "temperature", "topP", "stopSequences", "thinkingConfig"); len(raw) != 0 {
+	if raw := nestedExtras(data, "generationConfig", "maxOutputTokens", "temperature", "topP", "stopSequences", "thinkingConfig", "responseFormat"); len(raw) != 0 {
 		metadata = putMetadata(metadata, "gemini.generationConfig", raw)
 	}
 	if raw := nestedExtras(data, "toolConfig", "functionCallingConfig"); len(raw) != 0 {
@@ -46,6 +46,13 @@ func DecodeGenerateContentRequest(data []byte) (llm.Request, error) {
 				return llm.Request{}, err
 			}
 			request.Reasoning = reasoning
+		}
+		if len(wire.GenerationConfig.ResponseFormat) != 0 {
+			format, err := decodeGeminiResponseFormat(wire.GenerationConfig.ResponseFormat)
+			if err != nil {
+				return llm.Request{}, err
+			}
+			request.ResponseFormat = format
 		}
 	}
 	if wire.SystemInstruction != nil {
@@ -139,7 +146,7 @@ func EncodeGenerateContentRequest(request llm.Request) ([]byte, error) {
 		}
 		wire.ToolConfig = &geminiToolConfig{FunctionCallingConfig: &config}
 	}
-	if request.MaxOutputTokens != nil || request.Temperature != nil || request.TopP != nil || len(request.Stop) != 0 || request.Reasoning != nil {
+	if request.MaxOutputTokens != nil || request.Temperature != nil || request.TopP != nil || len(request.Stop) != 0 || request.Reasoning != nil || request.ResponseFormat != nil {
 		wire.GenerationConfig = &geminiGenerationConfig{
 			MaxOutputTokens: request.MaxOutputTokens,
 			Temperature:     request.Temperature,
@@ -152,6 +159,13 @@ func EncodeGenerateContentRequest(request llm.Request) ([]byte, error) {
 				return nil, err
 			}
 			wire.GenerationConfig.ThinkingConfig = thinking
+		}
+		if request.ResponseFormat != nil {
+			format, err := encodeGeminiResponseFormat(request.ResponseFormat)
+			if err != nil {
+				return nil, err
+			}
+			wire.GenerationConfig.ResponseFormat = format
 		}
 	}
 	data, err := json.Marshal(wire)
