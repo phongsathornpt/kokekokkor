@@ -14,6 +14,8 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 )
 
+const maxResponseHeaderBytes = 64 << 10
+
 type bearerTokenResolver interface {
 	BearerToken(context.Context, string) (string, bool, error)
 }
@@ -33,7 +35,7 @@ func (e retryableStatusError) Error() string {
 
 func New(logger *slog.Logger) *Proxy { return NewWithBearerTokenResolver(logger, nil) }
 func NewWithBearerTokenResolver(logger *slog.Logger, bearerTokens bearerTokenResolver) *Proxy {
-	return &Proxy{logger: logger, bearerTokens: bearerTokens, transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, MaxIdleConns: 256, MaxIdleConnsPerHost: 64, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 0}}
+	return &Proxy{logger: logger, bearerTokens: bearerTokens, transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, MaxIdleConns: 256, MaxIdleConnsPerHost: 64, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 0, MaxResponseHeaderBytes: maxResponseHeaderBytes}}
 }
 
 func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provider.Target, allowFallback bool) error {
