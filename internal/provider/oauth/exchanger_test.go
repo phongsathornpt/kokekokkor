@@ -74,3 +74,50 @@ func TestExchangerPostsAuthorizationCodeWithPKCE(t *testing.T) {
 		t.Fatalf("ExpiresAt = %v", tokens.ExpiresAt)
 	}
 }
+
+func TestExchangerRejectsOversizedTokenResponse(t *testing.T) {
+	prefix := `{"access_token":"access"}`
+	body := prefix + strings.Repeat(" ", maxOAuthTokenBodyBytes-len(prefix)+1)
+	client := tokenResponseClient(body)
+
+	_, err := NewExchanger(client).Exchange(context.Background(), testOAuthProvider(), appoauth.ExchangeRequest{
+		Code:         "code",
+		CodeVerifier: "verifier",
+		RedirectURI:  "https://gateway.example.com/oauth/provider/callback",
+	})
+	if err == nil || !strings.Contains(err.Error(), "OAuth token response exceeds") {
+		t.Fatalf("Exchange() error = %v, want token response size error", err)
+	}
+}
+
+func TestExchangerRejectsTrailingTokenResponseData(t *testing.T) {
+	client := tokenResponseClient(`{"access_token":"access"}{"ignored":true}`)
+
+	_, err := NewExchanger(client).Exchange(context.Background(), testOAuthProvider(), appoauth.ExchangeRequest{
+		Code:         "code",
+		CodeVerifier: "verifier",
+		RedirectURI:  "https://gateway.example.com/oauth/provider/callback",
+	})
+	if err == nil || !strings.Contains(err.Error(), "decode OAuth token response") {
+		t.Fatalf("Exchange() error = %v, want strict JSON decode error", err)
+	}
+}
+
+func tokenResponseClient(body string) *http.Client {
+	return &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	})}
+}
+
+func testOAuthProvider() domainoauth.Provider {
+	return domainoauth.Provider{
+		ID:               "provider",
+		AuthorizationURL: "https://login.example.com/authorize",
+		TokenURL:         "https://login.example.com/token",
+		ClientID:         "client-id",
+	}
+}
