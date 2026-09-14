@@ -13,12 +13,10 @@ func EncodeResponsesResponse(response llm.Response) ([]byte, error) {
 	status := "completed"
 	var incomplete any
 	switch response.StopReason {
-	case llm.StopReasonEndTurn, llm.StopReasonStopSequence, llm.StopReasonToolUse:
+	case llm.StopReasonEndTurn, llm.StopReasonStopSequence, llm.StopReasonToolUse, llm.StopReasonContentBlock:
 	case llm.StopReasonMaxTokens:
 		status = "incomplete"
 		incomplete = map[string]string{"reason": "max_output_tokens"}
-	case llm.StopReasonContentBlock:
-		return nil, fmt.Errorf("Responses translation does not yet represent content-filter/refusal output")
 	default:
 		return nil, fmt.Errorf("unsupported canonical stop reason %q for Responses", response.StopReason)
 	}
@@ -69,6 +67,7 @@ func encodeResponsesOutput(response llm.Response) ([]responseOutputItem, string,
 	messageIndex := 0
 	callIndex := 0
 	reasoningIndex := 0
+	isRefusal := response.StopReason == llm.StopReasonContentBlock
 
 	flushText := func() {
 		if len(textParts) == 0 {
@@ -88,6 +87,13 @@ func encodeResponsesOutput(response llm.Response) ([]responseOutputItem, string,
 	for _, block := range response.Content {
 		switch value := block.(type) {
 		case llm.TextBlock:
+			if isRefusal {
+				textParts = append(textParts, responseOutputPart{
+					Type:    "refusal",
+					Refusal: value.Text,
+				})
+				continue
+			}
 			textParts = append(textParts, responseOutputPart{
 				Type:        "output_text",
 				Text:        value.Text,

@@ -85,6 +85,7 @@ type responseSummaryPart struct {
 type responseOutputPart struct {
 	Type        string `json:"type"`
 	Text        string `json:"text,omitempty"`
+	Refusal     string `json:"refusal,omitempty"`
 	Annotations []any  `json:"annotations,omitempty"`
 }
 
