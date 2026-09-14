@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const maxRequestHeaderBytes = 64 << 10
+
 type Server struct {
 	HTTP *http.Server
 }
@@ -57,6 +59,7 @@ func NewWithAdmin(addr, gatewayAPIKey string, ready func() bool, openAI, anthrop
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    maxRequestHeaderBytes,
 	}}
 }
 
