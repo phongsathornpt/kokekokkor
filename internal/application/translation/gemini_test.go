@@ -54,13 +54,6 @@ func TestOpenAIToGeminiRequestRejectsUnsupportedSemantics(t *testing.T) {
 				llm.ImageBlock{Source: llm.MediaSource{Type: llm.MediaSourceURL, URL: "https://example.com/image.png"}},
 			}}}},
 		},
-		{
-			name: "structured output",
-			request: llm.Request{
-				Messages:       []llm.Message{{Role: llm.RoleUser, Content: []llm.ContentBlock{llm.TextBlock{Text: "hi"}}}},
-				ResponseFormat: &llm.ResponseFormat{JSONSchema: json.RawMessage(`{"type":"object"}`)},
-			},
-		},
 	}
 
 	for _, test := range tests {

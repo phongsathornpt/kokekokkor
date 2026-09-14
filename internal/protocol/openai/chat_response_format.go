@@ -35,10 +35,14 @@ func encodeChatResponseFormat(format *llm.ResponseFormat) (json.RawMessage, erro
 	if format == nil {
 		return nil, nil
 	}
+	name := format.Name
+	if name == "" {
+		name = "structured_output"
+	}
 	return json.Marshal(map[string]any{
 		"type": "json_schema",
 		"json_schema": map[string]any{
-			"name":        format.Name,
+			"name":        name,
 			"description": format.Description,
 			"schema":      json.RawMessage(format.JSONSchema),
 			"strict":      format.Strict,

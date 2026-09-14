@@ -72,6 +72,7 @@ type geminiGenerationConfig struct {
 	TopP            *float64              `json:"topP,omitempty"`
 	StopSequences   []string              `json:"stopSequences,omitempty"`
 	ThinkingConfig  *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
+	ResponseFormat  json.RawMessage       `json:"responseFormat,omitempty"`
 }
 
 type geminiThinkingConfig struct {

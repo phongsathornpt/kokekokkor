@@ -61,9 +61,6 @@ func OpenAIToAnthropicRequest(request llm.Request) (llm.Request, error) {
 	if request.MaxOutputTokens == nil {
 		return llm.Request{}, unsupported("max_tokens", "Anthropic Messages requires an explicit output-token limit")
 	}
-	if request.ResponseFormat != nil {
-		return llm.Request{}, unsupported("response_format", "structured-output translation is not implemented yet")
-	}
 	reasoning, err := openAIReasoningToAnthropic(request.Reasoning)
 	if err != nil {
 		return llm.Request{}, err

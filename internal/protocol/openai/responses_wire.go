@@ -13,6 +13,7 @@ type responsesRequest struct {
 	Temperature       *float64                 `json:"temperature,omitempty"`
 	TopP              *float64                 `json:"top_p,omitempty"`
 	Reasoning         *responseReasoningConfig `json:"reasoning,omitempty"`
+	Text              json.RawMessage          `json:"text,omitempty"`
 	Stream            bool                     `json:"stream,omitempty"`
 }
 
