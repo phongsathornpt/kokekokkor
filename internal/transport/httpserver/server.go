@@ -1,8 +1,11 @@
 package httpserver
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -52,14 +55,71 @@ func NewWithAdmin(addr, gatewayAPIKey string, ready func() bool, openAI, anthrop
 	}}
 }
 
+type accessLogResponseWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int64
+}
+
+func (w *accessLogResponseWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *accessLogResponseWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	n, err := w.ResponseWriter.Write(data)
+	w.bytes += int64(n)
+	return n, err
+}
+
+func (w *accessLogResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *accessLogResponseWriter) Flush() {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (w *accessLogResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("response writer does not support hijacking")
+	}
+	return hijacker.Hijack()
+}
+
+func (w *accessLogResponseWriter) Push(target string, opts *http.PushOptions) error {
+	pusher, ok := w.ResponseWriter.(http.Pusher)
+	if !ok {
+		return http.ErrNotSupported
+	}
+	return pusher.Push(target, opts)
+}
+
 func logging(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
-		next.ServeHTTP(w, r)
+		tracked := &accessLogResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(tracked, r)
+		status := tracked.status
+		if status == 0 {
+			status = http.StatusOK
+		}
 		logger.Info("http request",
 			"request_id", r.Header.Get("X-Request-ID"),
 			"method", r.Method,
 			"path", r.URL.Path,
+			"status", status,
+			"bytes", tracked.bytes,
 			"duration", time.Since(started),
 		)
 	})
