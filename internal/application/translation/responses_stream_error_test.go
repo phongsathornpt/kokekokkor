@@ -8,7 +8,7 @@ import (
 
 func TestAnthropicToResponsesStreamEventAllowsPortableError(t *testing.T) {
 	event := llm.StreamEvent{
-		Type: llm.StreamEventError,
+		Type:  llm.StreamEventError,
 		Error: &llm.StreamError{Code: "overloaded_error", Message: "busy", Retryable: true},
 	}
 	if err := AnthropicToResponsesStreamEvent(event); err != nil {
