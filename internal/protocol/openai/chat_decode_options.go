@@ -13,7 +13,7 @@ func chatMetadata(data []byte) (map[string]json.RawMessage, error) {
 		return nil, fmt.Errorf("decode chat metadata: %w", err)
 	}
 	for _, key := range []string{
-		"model", "messages", "tools", "tool_choice", "max_completion_tokens",
+		"model", "messages", "tools", "tool_choice", "parallel_tool_calls", "max_completion_tokens",
 		"max_tokens", "temperature", "top_p", "stop", "response_format", "reasoning_effort",
 	} {
 		delete(raw, key)
@@ -28,6 +28,12 @@ func decodeChatOptions(request *llm.Request, wire chatRequest) error {
 			return err
 		}
 		request.ToolChoice = choice
+	}
+	if wire.ParallelToolCalls != nil && !*wire.ParallelToolCalls {
+		if request.ToolChoice == nil {
+			request.ToolChoice = &llm.ToolChoice{Mode: llm.ToolChoiceAuto}
+		}
+		request.ToolChoice.DisableParallel = true
 	}
 	if len(wire.ResponseFormat) != 0 && string(wire.ResponseFormat) != "null" {
 		format, err := decodeChatResponseFormat(wire.ResponseFormat)
