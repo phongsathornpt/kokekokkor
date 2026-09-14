@@ -35,9 +35,6 @@ func AnthropicToResponsesStreamEvent(event llm.StreamEvent) error {
 	if len(event.Metadata) != 0 {
 		return unsupported("stream event metadata", fmt.Sprintf("event %q contains provider-specific metadata", event.Type))
 	}
-	if event.Type == llm.StreamEventReasoningDelta {
-		return unsupported("thinking stream", "Anthropic thinking cannot yet be represented losslessly in Responses streaming")
-	}
 	if event.Type == llm.StreamEventError {
 		return unsupported("stream error", "provider stream errors are not translated into Responses terminal events yet")
 	}
@@ -45,8 +42,12 @@ func AnthropicToResponsesStreamEvent(event llm.StreamEvent) error {
 		return unsupported("usage metadata", "usage contains provider-specific metadata")
 	}
 	if event.Type == llm.StreamEventContentStart {
-		switch event.Block.(type) {
+		switch block := event.Block.(type) {
 		case llm.TextBlock, llm.ToolCallBlock:
+		case llm.ReasoningBlock:
+			if block.Signature != "" || block.RedactedData != "" {
+				return unsupported("reasoning state", "provider state cannot be represented by Responses")
+			}
 		default:
 			return unsupported("response content", fmt.Sprintf("stream block %T cannot be represented in Responses output", event.Block))
 		}
