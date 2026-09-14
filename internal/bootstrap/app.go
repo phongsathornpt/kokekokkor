@@ -103,42 +103,40 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	return &App{server: server.HTTP, logger: logger, catalogStore: catalogStore}, nil
 }
 
-func (a *App) Run(ctx context.Context) error {
-	listener, err := net.Listen("tcp", a.server.Addr)
+func (a *App) Run(ctx context.Context) (err error) {
+	defer func() {
+		if closeErr := a.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", a.server.Addr)
 	if err != nil {
 		return err
 	}
-	serveErr := make(chan error, 1)
-	go func() {
-		if err := a.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serveErr <- err
-			return
-		}
-		serveErr <- nil
-	}()
-
+	a.logger.Info("gateway listening", "addr", listener.Addr().String())
+	errCh := make(chan error, 1)
+	go func() { errCh <- a.server.Serve(listener) }()
 	select {
-	case err := <-serveErr:
-		if a.catalogStore != nil {
-			_ = a.catalogStore.Close()
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
 		}
 		return err
 	case <-ctx.Done():
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := a.server.Shutdown(shutdownCtx); err != nil {
-		_ = a.server.Close()
-		if a.catalogStore != nil {
-			_ = a.catalogStore.Close()
-		}
-		return err
-	}
-	if a.catalogStore != nil {
-		if err := a.catalogStore.Close(); err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := a.server.Shutdown(shutdownCtx); err != nil {
 			return err
 		}
+		return nil
 	}
-	return <-serveErr
+}
+
+func (a *App) Close() error {
+	if a == nil || a.catalogStore == nil {
+		return nil
+	}
+	err := a.catalogStore.Close()
+	a.catalogStore = nil
+	return err
 }
