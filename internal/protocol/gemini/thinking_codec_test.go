@@ -3,6 +3,8 @@ package gemini
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 )
 
 func TestGenerateContentThinkingControlsRoundTrip(t *testing.T) {
