@@ -67,10 +67,17 @@ type geminiFunctionCallingConfig struct {
 }
 
 type geminiGenerationConfig struct {
-	MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
-	Temperature     *float64 `json:"temperature,omitempty"`
-	TopP            *float64 `json:"topP,omitempty"`
-	StopSequences   []string `json:"stopSequences,omitempty"`
+	MaxOutputTokens *int                  `json:"maxOutputTokens,omitempty"`
+	Temperature     *float64              `json:"temperature,omitempty"`
+	TopP            *float64              `json:"topP,omitempty"`
+	StopSequences   []string              `json:"stopSequences,omitempty"`
+	ThinkingConfig  *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+type geminiThinkingConfig struct {
+	IncludeThoughts *bool  `json:"includeThoughts,omitempty"`
+	ThinkingBudget  *int   `json:"thinkingBudget,omitempty"`
+	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
 }
 
 type generateContentResponse struct {
