@@ -110,3 +110,45 @@ func TestEncodeResponsesResponseTextAndToolCall(t *testing.T) {
 		t.Fatalf("usage = %#v", response.Usage)
 	}
 }
+
+func TestEncodeResponsesResponseRefusal(t *testing.T) {
+	encoded, err := EncodeResponsesResponse(llm.Response{
+		ID:         "msg_refusal",
+		Model:      "claude-upstream",
+		Content:    []llm.ContentBlock{llm.TextBlock{Text: "I can't help with that."}},
+		StopReason: llm.StopReasonContentBlock,
+		Usage:      llm.Usage{InputTokens: 8, OutputTokens: 6},
+	})
+	if err != nil {
+		t.Fatalf("EncodeResponsesResponse() error = %v", err)
+	}
+
+	var response struct {
+		Status     string `json:"status"`
+		OutputText string `json:"output_text"`
+		Output     []struct {
+			Type    string `json:"type"`
+			Content []struct {
+				Type    string `json:"type"`
+				Text    string `json:"text"`
+				Refusal string `json:"refusal"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(encoded, &response); err != nil {
+		t.Fatalf("decode encoded response: %v", err)
+	}
+	if response.Status != "completed" {
+		t.Fatalf("status = %q", response.Status)
+	}
+	if response.OutputText != "" {
+		t.Fatalf("output_text = %q, want empty for refusal", response.OutputText)
+	}
+	if len(response.Output) != 1 || response.Output[0].Type != "message" || len(response.Output[0].Content) != 1 {
+		t.Fatalf("output = %#v", response.Output)
+	}
+	part := response.Output[0].Content[0]
+	if part.Type != "refusal" || part.Refusal != "I can't help with that." || part.Text != "" {
+		t.Fatalf("refusal part = %#v", part)
+	}
+}
