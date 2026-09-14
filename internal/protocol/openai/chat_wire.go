@@ -7,6 +7,7 @@ type chatRequest struct {
 	Messages            []chatMessage   `json:"messages"`
 	Tools               []chatTool      `json:"tools,omitempty"`
 	ToolChoice          json.RawMessage `json:"tool_choice,omitempty"`
+	ParallelToolCalls   *bool           `json:"parallel_tool_calls,omitempty"`
 	MaxCompletionTokens *int            `json:"max_completion_tokens,omitempty"`
 	MaxTokens           *int            `json:"max_tokens,omitempty"`
 	Temperature         *float64        `json:"temperature,omitempty"`
