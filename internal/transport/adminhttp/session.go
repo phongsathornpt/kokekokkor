@@ -13,11 +13,9 @@ import (
 	"time"
 )
 
-const (
-	adminSessionCookie    = "kokekokkor_admin_session"
-	maxAdminFormBodyBytes = 1 << 20
-	adminContentSecurityPolicy = "default-src 'none'; script-src https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
-)
+const adminSessionCookie = "kokekokkor_admin_session"
+const maxAdminFormBodyBytes = 1 << 20
+const adminContentSecurityPolicy = "default-src 'none'; script-src https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
 
 type sessionContextKey struct{}
 
