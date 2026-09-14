@@ -54,6 +54,7 @@ func TestServiceBeginBuildsPKCEAuthorization(t *testing.T) {
 	service := NewService(states, &fakeExchanger{}, &memoryTokens{items: make(map[string]domainoauth.TokenSet)})
 	now := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
+	states.now = func() time.Time { return now }
 
 	authorization, err := service.Begin(context.Background(), testProvider(), "http://127.0.0.1:8080/oauth/callback")
 	if err != nil {
