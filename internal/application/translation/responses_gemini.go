@@ -14,9 +14,11 @@ func ResponsesToGeminiRequest(request llm.Request) (llm.Request, error) {
 	if err := rejectMetadata(metadata); err != nil {
 		return llm.Request{}, err
 	}
-	if request.Reasoning != nil {
-		return llm.Request{}, unsupported("reasoning", "Responses reasoning controls are not translated to Gemini yet")
+	reasoning, err := openAIReasoningToGemini(request.Reasoning)
+	if err != nil {
+		return llm.Request{}, err
 	}
+	request.Reasoning = reasoning
 	if request.ResponseFormat != nil {
 		return llm.Request{}, unsupported("response_format", "Responses structured-output translation to Gemini is not implemented yet")
 	}
@@ -80,13 +82,16 @@ func GeminiToResponsesResponse(response llm.Response) (llm.Response, error) {
 	}
 	for _, block := range response.Content {
 		switch block.(type) {
-		case llm.TextBlock, llm.ToolCallBlock:
-		case llm.ReasoningBlock:
-			return llm.Response{}, unsupported("thinking", "Gemini thought parts cannot yet be represented losslessly in Responses output")
+		case llm.TextBlock, llm.ToolCallBlock, llm.ReasoningBlock:
 		default:
 			return llm.Response{}, unsupported("response content", fmt.Sprintf("Gemini block %T cannot be represented in Responses output", block))
 		}
 	}
+	content, err := reasoningSummariesForResponses(response.Content)
+	if err != nil {
+		return llm.Response{}, err
+	}
+	response.Content = content
 	response.Metadata = nil
 	response.Usage.Metadata = nil
 	return response, nil
