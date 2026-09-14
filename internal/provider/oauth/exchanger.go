@@ -15,7 +15,10 @@ import (
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
 )
 
-const defaultTokenRequestTimeout = 15 * time.Second
+const (
+	defaultTokenRequestTimeout = 15 * time.Second
+	maxOAuthErrorBodyBytes     = 16 << 10
+)
 
 type Exchanger struct {
 	client *http.Client
@@ -64,8 +67,7 @@ func (e *Exchanger) exchangeForm(ctx context.Context, tokenURL string, form url.
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-		return domainoauth.TokenSet{}, fmt.Errorf("OAuth token endpoint returned %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		return domainoauth.TokenSet{}, tokenEndpointError(response.StatusCode, response.Body)
 	}
 
 	var payload struct {
@@ -89,6 +91,31 @@ func (e *Exchanger) exchangeForm(ctx context.Context, tokenURL string, form url.
 		tokens.ExpiresAt = e.now().UTC().Add(time.Duration(seconds) * time.Second)
 	}
 	return tokens, nil
+}
+
+func tokenEndpointError(status int, body io.Reader) error {
+	var payload struct {
+		Error string `json:"error"`
+	}
+	_ = json.NewDecoder(io.LimitReader(body, maxOAuthErrorBodyBytes)).Decode(&payload)
+	if code := safeOAuthErrorCode(payload.Error); code != "" {
+		return fmt.Errorf("OAuth token endpoint returned %d (%s)", status, code)
+	}
+	return fmt.Errorf("OAuth token endpoint returned %d", status)
+}
+
+func safeOAuthErrorCode(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 64 {
+		return ""
+	}
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return ""
+	}
+	return value
 }
 
 func parseExpiresIn(raw json.RawMessage) (int64, bool) {
