@@ -202,6 +202,14 @@ func DecodeMessagesStream(r io.Reader, emit func(llm.StreamEvent) error) error {
 					return nil
 				}
 			}
+			if thinkingBlocks[wire.Index] {
+				delete(thinkingBlocks, wire.Index)
+				started := thinkingStarted[wire.Index]
+				delete(thinkingStarted, wire.Index)
+				if !started {
+					return nil
+				}
+			}
 			return emit(llm.StreamEvent{Type: llm.StreamEventContentStop, Index: wire.Index})
 
 		case "message_delta":
