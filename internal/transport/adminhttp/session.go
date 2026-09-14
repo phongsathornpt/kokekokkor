@@ -15,6 +15,7 @@ import (
 
 const adminSessionCookie = "kokekokkor_admin_session"
 const maxAdminFormBodyBytes = 1 << 20
+const maxAdminSessions = 64
 const adminContentSecurityPolicy = "default-src 'none'; script-src https://cdn.jsdelivr.net; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'"
 
 type sessionContextKey struct{}
@@ -129,10 +130,14 @@ func (a *SessionAuth) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session unavailable", http.StatusInternalServerError)
 		return
 	}
-	expires := a.now().UTC().Add(a.ttl)
+	now := a.now().UTC()
+	expires := now.Add(a.ttl)
 	a.mu.Lock()
+	a.pruneLocked(now)
+	if len(a.sessions) >= maxAdminSessions {
+		a.evictOldestLocked()
+	}
 	a.sessions[token] = adminSession{CSRF: csrf, ExpiresAt: expires}
-	a.pruneLocked(a.now().UTC())
 	a.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{
 		Name:     adminSessionCookie,
@@ -168,6 +173,20 @@ func (a *SessionAuth) pruneLocked(now time.Time) {
 		if !session.ExpiresAt.After(now) {
 			delete(a.sessions, token)
 		}
+	}
+}
+
+func (a *SessionAuth) evictOldestLocked() {
+	oldestToken := ""
+	var oldest adminSession
+	for token, session := range a.sessions {
+		if oldestToken == "" || session.ExpiresAt.Before(oldest.ExpiresAt) || (session.ExpiresAt.Equal(oldest.ExpiresAt) && token < oldestToken) {
+			oldestToken = token
+			oldest = session
+		}
+	}
+	if oldestToken != "" {
+		delete(a.sessions, oldestToken)
 	}
 }
 
