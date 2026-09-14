@@ -18,6 +18,7 @@ import (
 const (
 	defaultTokenRequestTimeout = 15 * time.Second
 	maxOAuthErrorBodyBytes     = 16 << 10
+	maxOAuthTokenBodyBytes     = 1 << 20
 )
 
 type Exchanger struct {
@@ -70,6 +71,14 @@ func (e *Exchanger) exchangeForm(ctx context.Context, tokenURL string, form url.
 		return domainoauth.TokenSet{}, tokenEndpointError(response.StatusCode, response.Body)
 	}
 
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxOAuthTokenBodyBytes+1))
+	if err != nil {
+		return domainoauth.TokenSet{}, fmt.Errorf("read OAuth token response: %w", err)
+	}
+	if len(body) > maxOAuthTokenBodyBytes {
+		return domainoauth.TokenSet{}, fmt.Errorf("OAuth token response exceeds %d byte limit", maxOAuthTokenBodyBytes)
+	}
+
 	var payload struct {
 		AccessToken  string          `json:"access_token"`
 		RefreshToken string          `json:"refresh_token"`
@@ -77,7 +86,7 @@ func (e *Exchanger) exchangeForm(ctx context.Context, tokenURL string, form url.
 		Scope        string          `json:"scope"`
 		ExpiresIn    json.RawMessage `json:"expires_in"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return domainoauth.TokenSet{}, fmt.Errorf("decode OAuth token response: %w", err)
 	}
 
