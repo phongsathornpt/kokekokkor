@@ -107,6 +107,7 @@ func requestID(next http.Handler) http.Handler {
 			}
 		}
 		if id != "" {
+			r.Header.Set("X-Request-ID", id)
 			w.Header().Set("X-Request-ID", id)
 		}
 		next.ServeHTTP(w, r)

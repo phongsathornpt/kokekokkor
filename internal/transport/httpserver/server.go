@@ -56,7 +56,12 @@ func logging(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		next.ServeHTTP(w, r)
-		logger.Info("http request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(started))
+		logger.Info("http request",
+			"request_id", r.Header.Get("X-Request-ID"),
+			"method", r.Method,
+			"path", r.URL.Path,
+			"duration", time.Since(started),
+		)
 	})
 }
 
