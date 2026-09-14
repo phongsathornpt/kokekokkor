@@ -283,13 +283,13 @@ func encodeAnthropicContent(blocks []llm.ContentBlock) (json.RawMessage, error) 
 			if err != nil {
 				return nil, err
 			}
-			encoded = append(encoded, map[string]any{"type": "image", "source": source)
+			encoded = append(encoded, map[string]any{"type": "image", "source": source})
 		case llm.DocumentBlock:
 			source, err := encodeAnthropicMediaSource(value.Source)
 			if err != nil {
 				return nil, err
 			}
-			encoded = append(encoded, map[string]any{"type": "document", "source": source)
+			encoded = append(encoded, map[string]any{"type": "document", "source": source})
 		case llm.ToolCallBlock:
 			var input any
 			if err := json.Unmarshal(value.Arguments, &input); err != nil {
