@@ -70,7 +70,7 @@ func (e *ResponsesStreamEncoder) Encode(event llm.StreamEvent) error {
 	case llm.StreamEventReasoningDelta:
 		return e.writeReasoningDelta(event)
 	case llm.StreamEventError:
-		return fmt.Errorf("upstream stream error cannot be represented as a Responses event")
+		return e.failResponse(event)
 	default:
 		return fmt.Errorf("unsupported canonical stream event %q", event.Type)
 	}
