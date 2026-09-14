@@ -35,8 +35,8 @@ func AnthropicToResponsesStreamEvent(event llm.StreamEvent) error {
 	if len(event.Metadata) != 0 {
 		return unsupported("stream event metadata", fmt.Sprintf("event %q contains provider-specific metadata", event.Type))
 	}
-	if event.Type == llm.StreamEventError {
-		return unsupported("stream error", "provider stream errors are not translated into Responses terminal events yet")
+	if event.Type == llm.StreamEventError && event.Error == nil {
+		return unsupported("stream error", "provider stream error is missing a portable error payload")
 	}
 	if event.Usage != nil && len(event.Usage.Metadata) != 0 {
 		return unsupported("usage metadata", "usage contains provider-specific metadata")
