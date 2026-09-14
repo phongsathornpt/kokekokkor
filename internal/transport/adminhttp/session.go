@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"html/template"
 	"net/http"
 	"strings"
@@ -12,7 +13,10 @@ import (
 	"time"
 )
 
-const adminSessionCookie = "kokekokkor_admin_session"
+const (
+	adminSessionCookie    = "kokekokkor_admin_session"
+	maxAdminFormBodyBytes = 1 << 20
+)
 
 type sessionContextKey struct{}
 
@@ -64,6 +68,12 @@ func (a *SessionAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		if !parseAdminForm(w, r) {
+			return
+		}
+	}
+
 	if r.URL.Path == "/admin/logout" {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -100,8 +110,7 @@ func AdminCSRFToken(ctx context.Context) string {
 }
 
 func (a *SessionAuth) login(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		a.renderLogin(w, http.StatusBadRequest, "invalid form")
+	if !parseAdminForm(w, r) {
 		return
 	}
 	password := r.Form.Get("password")
@@ -178,6 +187,20 @@ func (a *SessionAuth) renderLogin(w http.ResponseWriter, status int, message str
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = loginTemplate.Execute(w, struct{ Message string }{Message: message})
+}
+
+func parseAdminForm(w http.ResponseWriter, r *http.Request) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxAdminFormBodyBytes)
+	if err := r.ParseForm(); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, "admin request body too large", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "invalid admin form", http.StatusBadRequest)
+		}
+		return false
+	}
+	return true
 }
 
 func csrfEqual(r *http.Request, expected string) bool {
