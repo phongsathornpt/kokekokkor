@@ -295,7 +295,7 @@ func encodeAnthropicContent(blocks []llm.ContentBlock) (json.RawMessage, error) 
 			if err := json.Unmarshal(value.Arguments, &input); err != nil {
 				return nil, fmt.Errorf("decode canonical tool arguments: %w", err)
 			}
-			encoded = append(encoded, map[string]any{"type": "tool_use", "id": value.ID, "name": value.Name, "input": input)
+			encoded = append(encoded, map[string]any{"type": "tool_use", "id": value.ID, "name": value.Name, "input": input})
 		case llm.ToolResultBlock:
 			content, err := encodeAnthropicContent(value.Content)
 			if err != nil {
