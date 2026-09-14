@@ -59,12 +59,19 @@ func TestAnthropicToResponsesAllowsCacheWriteUsage(t *testing.T) {
 	}
 }
 
-func TestAnthropicToResponsesRejectsThinkingBlock(t *testing.T) {
-	_, err := AnthropicToResponsesResponse(llm.Response{
-		Content:    []llm.ContentBlock{llm.ReasoningBlock{Text: "hidden"}},
+func TestAnthropicToResponsesAllowsThinkingSummary(t *testing.T) {
+	translated, err := AnthropicToResponsesResponse(llm.Response{
+		Content:    []llm.ContentBlock{llm.ReasoningBlock{Text: "summary", Signature: "anthropic-signature"}},
 		StopReason: llm.StopReasonEndTurn,
 	})
-	if !errors.Is(err, ErrUnsupported) {
-		t.Fatalf("error = %v, want ErrUnsupported", err)
+	if err != nil {
+		t.Fatalf("AnthropicToResponsesResponse() error = %v", err)
+	}
+	if len(translated.Content) != 1 {
+		t.Fatalf("content = %#v", translated.Content)
+	}
+	reasoning, ok := translated.Content[0].(llm.ReasoningBlock)
+	if !ok || reasoning.Text != "summary" || reasoning.Signature != "" {
+		t.Fatalf("reasoning = %#v", translated.Content[0])
 	}
 }
