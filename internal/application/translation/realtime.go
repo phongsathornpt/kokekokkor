@@ -1,15 +1,16 @@
 package translation
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 )
 
-// OpenAIRealtimeToGeminiTextEvent validates the portable text/function subset
-// of OpenAI Realtime client controls that can participate in a Gemini Live
-// translation. Stateful ordering constraints are enforced by the session bridge.
+// OpenAIRealtimeToGeminiTextEvent validates the portable text/function/audio
+// subset of OpenAI Realtime controls that can participate in Gemini Live.
 func OpenAIRealtimeToGeminiTextEvent(event llm.RealtimeEvent) error {
 	if len(event.Metadata) != 0 {
 		return unsupported("realtime event metadata", fmt.Sprintf("event %q contains provider-specific fields", event.WireType))
@@ -18,28 +19,32 @@ func OpenAIRealtimeToGeminiTextEvent(event llm.RealtimeEvent) error {
 	switch event.Type {
 	case llm.RealtimeEventSessionStart, llm.RealtimeEventSessionUpdate:
 		return validateGeminiRealtimeSession(event)
-
 	case llm.RealtimeEventItemCreate:
 		if event.ToolResult != nil {
 			return validateGeminiRealtimeToolResult(event.ToolResult)
 		}
 		return validateGeminiRealtimeMessage(event)
-
 	case llm.RealtimeEventResponseCreate:
 		if len(event.Response) != 0 {
 			return unsupported("realtime response configuration", "per-response OpenAI configuration has no portable Gemini Live mapping")
 		}
 		return nil
-
-	case llm.RealtimeEventInputAudioAppend, llm.RealtimeEventInputAudioCommit, llm.RealtimeEventInputAudioClear:
-		return unsupported("realtime audio", "Gemini Live audio translation requires explicit codec and activity semantics")
-
+	case llm.RealtimeEventInputAudioAppend:
+		if event.Audio == "" {
+			return unsupported("realtime audio", "audio append is empty")
+		}
+		if _, err := base64.StdEncoding.DecodeString(event.Audio); err != nil {
+			return unsupported("realtime audio", "audio append is not valid base64")
+		}
+		return nil
+	case llm.RealtimeEventInputAudioCommit:
+		return nil
+	case llm.RealtimeEventInputAudioClear:
+		return unsupported("realtime audio clear", "Gemini Live has no equivalent buffer-clear control under automatic activity detection")
 	case llm.RealtimeEventResponseCancel:
 		return unsupported("realtime cancellation", "Gemini Live does not expose an equivalent response.cancel control")
-
 	case llm.RealtimeEventUnknown:
 		return unsupported("realtime event", fmt.Sprintf("OpenAI event %q has no Gemini Live mapping", event.WireType))
-
 	default:
 		return unsupported("realtime event", fmt.Sprintf("canonical event %q has no Gemini Live mapping", event.Type))
 	}
@@ -53,8 +58,14 @@ func validateGeminiRealtimeSession(event llm.RealtimeEvent) error {
 	if len(config.Metadata) != 0 {
 		return unsupported("realtime session metadata", "session contains provider-specific fields")
 	}
-	if len(config.OutputModalities) != 1 || config.OutputModalities[0] != "text" {
-		return unsupported("realtime modalities", "Gemini text translation requires output_modalities to contain only text")
+	if len(config.OutputModalities) != 1 || (config.OutputModalities[0] != "text" && config.OutputModalities[0] != "audio") {
+		return unsupported("realtime modalities", "Gemini translation requires exactly one text or audio output modality")
+	}
+	if config.InputAudioMediaType != "" && !strings.HasPrefix(config.InputAudioMediaType, "audio/pcm;rate=") {
+		return unsupported("realtime input audio format", fmt.Sprintf("%q is not raw PCM", config.InputAudioMediaType))
+	}
+	if config.OutputModalities[0] == "audio" && config.OutputAudioMediaType != "" && config.OutputAudioMediaType != "audio/pcm;rate=24000" {
+		return unsupported("realtime output audio format", "Gemini Live output is fixed at raw PCM 24kHz")
 	}
 	toolNames := make(map[string]struct{}, len(config.Tools))
 	for _, tool := range config.Tools {
