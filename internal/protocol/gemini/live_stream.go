@@ -11,9 +11,9 @@ import (
 // messages into canonical stream events. Control-plane messages such as
 // setupComplete and goAway are intentionally handled by the session bridge.
 type LiveStreamDecoder struct {
-	model         string
-	responseOpen  bool
-	contentOpen   bool
+	model        string
+	responseOpen bool
+	contentOpen  bool
 }
 
 func NewLiveStreamDecoder(model string) *LiveStreamDecoder {
