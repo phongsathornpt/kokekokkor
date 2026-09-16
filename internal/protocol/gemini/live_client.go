@@ -170,7 +170,7 @@ func (e *LiveClientEncoder) encodeMessage(event llm.RealtimeEvent) ([]byte, erro
 
 	payload, err := json.Marshal(map[string]any{
 		"clientContent": map[string]any{
-			"turns": []map[string]any{{"role": role, "parts": parts}},
+			"turns":        []map[string]any{{"role": role, "parts": parts}},
 			"turnComplete": false,
 		},
 	})
