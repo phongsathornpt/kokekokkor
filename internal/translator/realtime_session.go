@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -16,9 +17,8 @@ var (
 )
 
 // RealtimeSessionBridge owns the protocol state for one OpenAI Realtime ->
-// Gemini Live text session. Network transports feed complete WebSocket text
-// messages into ClientMessage and ServerMessage; the bridge returns zero or
-// more complete text messages for the opposite peer.
+// Gemini Live text/function session. Network transports feed complete WebSocket
+// text messages into ClientMessage and ServerMessage.
 type RealtimeSessionBridge struct {
 	mu            sync.Mutex
 	clientEncoder *geminiProtocol.LiveClientEncoder
@@ -26,6 +26,7 @@ type RealtimeSessionBridge struct {
 	serverEncoder *openaiProtocol.RealtimeServerEncoder
 	setupSent     bool
 	setupComplete bool
+	toolCalls     map[string]string
 }
 
 func NewRealtimeSessionBridge(geminiModel string) *RealtimeSessionBridge {
@@ -33,6 +34,7 @@ func NewRealtimeSessionBridge(geminiModel string) *RealtimeSessionBridge {
 		clientEncoder: geminiProtocol.NewLiveClientEncoder(geminiModel),
 		streamDecoder: geminiProtocol.NewLiveStreamDecoder(geminiModel),
 		serverEncoder: openaiProtocol.NewRealtimeServerEncoder(),
+		toolCalls:     make(map[string]string),
 	}
 }
 
@@ -46,6 +48,13 @@ func (b *RealtimeSessionBridge) ClientMessage(data []byte) ([][]byte, error) {
 	event, err := openaiProtocol.DecodeRealtimeEvent(data)
 	if err != nil {
 		return nil, apptranslation.WrapRequest(err)
+	}
+	if event.ToolResult != nil && event.ToolResult.Name == "" {
+		name, ok := b.toolCalls[event.ToolResult.ToolCallID]
+		if !ok {
+			return nil, apptranslation.WrapRequest(fmt.Errorf("unknown realtime tool call %q", event.ToolResult.ToolCallID))
+		}
+		event.ToolResult.Name = name
 	}
 	if err := apptranslation.OpenAIRealtimeToGeminiTextEvent(event); err != nil {
 		return nil, err
@@ -65,6 +74,9 @@ func (b *RealtimeSessionBridge) ClientMessage(data []byte) ([][]byte, error) {
 	}
 	if isSetup {
 		b.setupSent = true
+	}
+	if event.ToolResult != nil {
+		delete(b.toolCalls, event.ToolResult.ToolCallID)
 	}
 	return [][]byte{payload}, nil
 }
@@ -92,6 +104,11 @@ func (b *RealtimeSessionBridge) ServerMessage(data []byte) ([][]byte, error) {
 	if len(message.SessionResumptionUpdate) != 0 {
 		return nil, apptranslation.WrapResponse(errors.New("Gemini Live session resumption state has no portable OpenAI Realtime mapping"))
 	}
+	if len(message.ToolCall) != 0 {
+		if err := b.rememberToolCalls(message.ToolCall); err != nil {
+			return nil, apptranslation.WrapResponse(err)
+		}
+	}
 
 	events, err := b.streamDecoder.Decode(message)
 	if err != nil {
@@ -106,6 +123,25 @@ func (b *RealtimeSessionBridge) ServerMessage(data []byte) ([][]byte, error) {
 		payloads = append(payloads, encoded...)
 	}
 	return payloads, nil
+}
+
+func (b *RealtimeSessionBridge) rememberToolCalls(data json.RawMessage) error {
+	var wire struct {
+		FunctionCalls []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"functionCalls"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return fmt.Errorf("decode Gemini Live tool-call correlation: %w", err)
+	}
+	for _, call := range wire.FunctionCalls {
+		if call.ID == "" || call.Name == "" {
+			return errors.New("Gemini Live function call is missing id or name")
+		}
+		b.toolCalls[call.ID] = call.Name
+	}
+	return nil
 }
 
 func (b *RealtimeSessionBridge) SetupComplete() bool {
