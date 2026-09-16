@@ -90,14 +90,14 @@ func TestLiveClientEncoderMessageAndTurnComplete(t *testing.T) {
 func TestLiveClientEncoderAssistantRoleMapsToModel(t *testing.T) {
 	encoder := NewLiveClientEncoder("gemini-live")
 	_, err := encoder.Encode(llm.RealtimeEvent{
-		Type: llm.RealtimeEventSessionUpdate,
+		Type:          llm.RealtimeEventSessionUpdate,
 		SessionConfig: &llm.RealtimeSessionConfig{OutputModalities: []string{"text"}},
 	})
 	if err != nil {
 		t.Fatalf("setup Encode() error = %v", err)
 	}
 	payload, err := encoder.Encode(llm.RealtimeEvent{
-		Type: llm.RealtimeEventItemCreate,
+		Type:    llm.RealtimeEventItemCreate,
 		Message: &llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentBlock{llm.TextBlock{Text: "prior answer"}}},
 	})
 	if err != nil {
@@ -114,19 +114,19 @@ func TestLiveClientEncoderRejectsInvalidOrderingAndShapes(t *testing.T) {
 		t.Fatal("response before setup accepted")
 	}
 	if _, err := encoder.Encode(llm.RealtimeEvent{
-		Type: llm.RealtimeEventSessionUpdate,
+		Type:          llm.RealtimeEventSessionUpdate,
 		SessionConfig: &llm.RealtimeSessionConfig{OutputModalities: []string{"text"}},
 	}); err != nil {
 		t.Fatalf("setup Encode() error = %v", err)
 	}
 	if _, err := encoder.Encode(llm.RealtimeEvent{
-		Type: llm.RealtimeEventSessionUpdate,
+		Type:          llm.RealtimeEventSessionUpdate,
 		SessionConfig: &llm.RealtimeSessionConfig{OutputModalities: []string{"text"}},
 	}); err == nil {
 		t.Fatal("second setup accepted")
 	}
 	if _, err := encoder.Encode(llm.RealtimeEvent{
-		Type: llm.RealtimeEventItemCreate,
+		Type:    llm.RealtimeEventItemCreate,
 		Message: &llm.Message{Role: llm.RoleSystem, Content: []llm.ContentBlock{llm.TextBlock{Text: "nope"}}},
 	}); err == nil {
 		t.Fatal("system-role client content accepted")
