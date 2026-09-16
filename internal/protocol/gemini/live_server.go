@@ -7,8 +7,14 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 )
 
+type LiveAudioChunk struct {
+	MediaType string
+	Data      string
+}
+
 type LiveServerContent struct {
 	Text               []string
+	Audio              []LiveAudioChunk
 	GenerationComplete bool
 	TurnComplete       bool
 	Interrupted        bool
@@ -48,7 +54,13 @@ type liveContent struct {
 }
 
 type livePart struct {
-	Text *string `json:"text"`
+	Text       *string         `json:"text"`
+	InlineData *liveInlineData `json:"inlineData"`
+}
+
+type liveInlineData struct {
+	MediaType string `json:"mimeType"`
+	Data      string `json:"data"`
 }
 
 type liveUsage struct {
@@ -145,6 +157,15 @@ func decodeLiveServerContent(data json.RawMessage) (LiveServerContent, error) {
 	for _, part := range wire.ModelTurn.Parts {
 		if part.Text != nil {
 			content.Text = append(content.Text, *part.Text)
+		}
+		if part.InlineData != nil {
+			if part.InlineData.MediaType == "" || part.InlineData.Data == "" {
+				return LiveServerContent{}, fmt.Errorf("decode Gemini Live inline data: missing mimeType or data")
+			}
+			content.Audio = append(content.Audio, LiveAudioChunk{
+				MediaType: part.InlineData.MediaType,
+				Data:      part.InlineData.Data,
+			})
 		}
 	}
 	if len(fields) != 0 {
