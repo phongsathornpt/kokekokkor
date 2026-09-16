@@ -22,8 +22,10 @@ func TestOpenAIRealtimeToGeminiTextEventPortableSubset(t *testing.T) {
 			Type:     llm.RealtimeEventSessionUpdate,
 			WireType: "session.update",
 			SessionConfig: &llm.RealtimeSessionConfig{
-				Instructions:     "be concise",
-				OutputModalities: []string{"text"},
+				Instructions:         "be concise",
+				OutputModalities:     []string{"audio"},
+				InputAudioMediaType:  "audio/pcm;rate=24000",
+				OutputAudioMediaType: "audio/pcm;rate=24000",
 			},
 		},
 		{
@@ -34,6 +36,8 @@ func TestOpenAIRealtimeToGeminiTextEventPortableSubset(t *testing.T) {
 				Content: []llm.ContentBlock{llm.TextBlock{Text: "hello"}},
 			},
 		},
+		{Type: llm.RealtimeEventInputAudioAppend, WireType: "input_audio_buffer.append", Audio: "YWJj"},
+		{Type: llm.RealtimeEventInputAudioCommit, WireType: "input_audio_buffer.commit"},
 		{Type: llm.RealtimeEventResponseCreate, WireType: "response.create"},
 	}
 
@@ -46,8 +50,7 @@ func TestOpenAIRealtimeToGeminiTextEventPortableSubset(t *testing.T) {
 
 func TestOpenAIRealtimeToGeminiTextEventRejectsNonPortableControls(t *testing.T) {
 	tests := []llm.RealtimeEvent{
-		{Type: llm.RealtimeEventInputAudioAppend, WireType: "input_audio_buffer.append", Audio: "YWJj"},
-		{Type: llm.RealtimeEventInputAudioCommit, WireType: "input_audio_buffer.commit"},
+		{Type: llm.RealtimeEventInputAudioAppend, WireType: "input_audio_buffer.append", Audio: "%%%"},
 		{Type: llm.RealtimeEventInputAudioClear, WireType: "input_audio_buffer.clear"},
 		{Type: llm.RealtimeEventResponseCancel, WireType: "response.cancel"},
 		{Type: llm.RealtimeEventUnknown, WireType: "vendor.future.event"},
@@ -99,8 +102,8 @@ func TestOpenAIRealtimeToGeminiTextEventRequiresCanonicalPayloads(t *testing.T) 
 	}
 }
 
-func TestOpenAIRealtimeToGeminiTextEventRequiresTextOnlyOutput(t *testing.T) {
-	for _, modalities := range [][]string{nil, {"audio"}, {"text", "audio"}} {
+func TestOpenAIRealtimeToGeminiTextEventRequiresSinglePortableOutput(t *testing.T) {
+	for _, modalities := range [][]string{nil, {"text", "audio"}, {"image"}} {
 		err := OpenAIRealtimeToGeminiTextEvent(llm.RealtimeEvent{
 			Type:     llm.RealtimeEventSessionUpdate,
 			WireType: "session.update",

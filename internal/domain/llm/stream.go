@@ -8,6 +8,7 @@ const (
 	StreamEventResponseStart  StreamEventType = "response_start"
 	StreamEventContentStart   StreamEventType = "content_start"
 	StreamEventTextDelta      StreamEventType = "text_delta"
+	StreamEventAudioDelta     StreamEventType = "audio_delta"
 	StreamEventReasoningDelta StreamEventType = "reasoning_delta"
 	StreamEventToolCallStart  StreamEventType = "tool_call_start"
 	StreamEventToolCallDelta  StreamEventType = "tool_call_delta"
@@ -37,6 +38,8 @@ type StreamEvent struct {
 	Index          int
 	Block          ContentBlock
 	TextDelta      string
+	AudioDelta     string
+	AudioMediaType string
 	ReasoningDelta string
 	ToolCallDelta  *ToolCallDelta
 	Usage          *Usage

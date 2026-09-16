@@ -14,12 +14,15 @@ var (
 	errLiveSetupAlready  = errors.New("Gemini Live setup is immutable after the first message")
 )
 
-// LiveClientEncoder converts the canonical text/function realtime subset into
-// Gemini Live client messages while enforcing Gemini's session ordering rules.
+const defaultRealtimeInputAudioMediaType = "audio/pcm;rate=24000"
+
+// LiveClientEncoder converts the canonical text/function/audio realtime subset
+// into Gemini Live client messages while enforcing session ordering rules.
 type LiveClientEncoder struct {
-	model       string
-	setupSent   bool
-	contentSent bool
+	model               string
+	inputAudioMediaType string
+	setupSent           bool
+	contentSent         bool
 }
 
 func NewLiveClientEncoder(model string) *LiveClientEncoder {
@@ -35,6 +38,10 @@ func (e *LiveClientEncoder) Encode(event llm.RealtimeEvent) ([]byte, error) {
 			return e.encodeToolResult(event.ToolResult)
 		}
 		return e.encodeMessage(event)
+	case llm.RealtimeEventInputAudioAppend:
+		return e.encodeAudioAppend(event.Audio)
+	case llm.RealtimeEventInputAudioCommit:
+		return e.encodeAudioCommit()
 	case llm.RealtimeEventResponseCreate:
 		return e.encodeTurnComplete()
 	default:
@@ -53,8 +60,8 @@ func (e *LiveClientEncoder) encodeSetup(event llm.RealtimeEvent) ([]byte, error)
 	if len(config.Metadata) != 0 {
 		return nil, errors.New("Gemini Live setup cannot encode provider-specific session metadata")
 	}
-	if len(config.OutputModalities) != 1 || config.OutputModalities[0] != "text" {
-		return nil, errors.New("Gemini Live text encoder requires exactly one text output modality")
+	if len(config.OutputModalities) != 1 || (config.OutputModalities[0] != "text" && config.OutputModalities[0] != "audio") {
+		return nil, errors.New("Gemini Live encoder requires exactly one text or audio output modality")
 	}
 
 	model := strings.TrimSpace(e.model)
@@ -68,9 +75,13 @@ func (e *LiveClientEncoder) encodeSetup(event llm.RealtimeEvent) ([]byte, error)
 		model = "models/" + model
 	}
 
+	modality := "TEXT"
+	if config.OutputModalities[0] == "audio" {
+		modality = "AUDIO"
+	}
 	setup := map[string]any{
 		"model":              model,
-		"responseModalities": []string{"TEXT"},
+		"responseModalities": []string{modality},
 	}
 	if config.Instructions != "" {
 		setup["systemInstruction"] = map[string]any{
@@ -116,6 +127,10 @@ func (e *LiveClientEncoder) encodeSetup(event llm.RealtimeEvent) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("encode Gemini Live setup: %w", err)
 	}
+	e.inputAudioMediaType = config.InputAudioMediaType
+	if e.inputAudioMediaType == "" {
+		e.inputAudioMediaType = defaultRealtimeInputAudioMediaType
+	}
 	e.setupSent = true
 	return payload, nil
 }
@@ -155,10 +170,7 @@ func (e *LiveClientEncoder) encodeMessage(event llm.RealtimeEvent) ([]byte, erro
 
 	payload, err := json.Marshal(map[string]any{
 		"clientContent": map[string]any{
-			"turns": []map[string]any{{
-				"role":  role,
-				"parts": parts,
-			}},
+			"turns":        []map[string]any{{"role": role, "parts": parts}},
 			"turnComplete": false,
 		},
 	})
@@ -166,6 +178,41 @@ func (e *LiveClientEncoder) encodeMessage(event llm.RealtimeEvent) ([]byte, erro
 		return nil, fmt.Errorf("encode Gemini Live client content: %w", err)
 	}
 	e.contentSent = true
+	return payload, nil
+}
+
+func (e *LiveClientEncoder) encodeAudioAppend(audio string) ([]byte, error) {
+	if !e.setupSent {
+		return nil, errLiveSetupRequired
+	}
+	if audio == "" {
+		return nil, errors.New("Gemini Live audio input is empty")
+	}
+	payload, err := json.Marshal(map[string]any{
+		"realtimeInput": map[string]any{
+			"audio": map[string]any{
+				"data":     audio,
+				"mimeType": e.inputAudioMediaType,
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode Gemini Live audio input: %w", err)
+	}
+	e.contentSent = true
+	return payload, nil
+}
+
+func (e *LiveClientEncoder) encodeAudioCommit() ([]byte, error) {
+	if !e.setupSent {
+		return nil, errLiveSetupRequired
+	}
+	payload, err := json.Marshal(map[string]any{
+		"realtimeInput": map[string]any{"audioStreamEnd": true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode Gemini Live audio stream end: %w", err)
+	}
 	return payload, nil
 }
 
@@ -200,9 +247,7 @@ func (e *LiveClientEncoder) encodeToolResult(result *llm.ToolResultBlock) ([]byt
 	payload, err := json.Marshal(map[string]any{
 		"toolResponse": map[string]any{
 			"functionResponses": []map[string]any{{
-				"id":       result.ToolCallID,
-				"name":     result.Name,
-				"response": response,
+				"id": result.ToolCallID, "name": result.Name, "response": response,
 			}},
 		},
 	})
@@ -218,9 +263,7 @@ func (e *LiveClientEncoder) encodeTurnComplete() ([]byte, error) {
 		return nil, errLiveSetupRequired
 	}
 	payload, err := json.Marshal(map[string]any{
-		"clientContent": map[string]any{
-			"turnComplete": true,
-		},
+		"clientContent": map[string]any{"turnComplete": true},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode Gemini Live turn completion: %w", err)

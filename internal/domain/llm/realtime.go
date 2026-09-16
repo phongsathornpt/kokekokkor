@@ -20,12 +20,14 @@ const (
 )
 
 type RealtimeSessionConfig struct {
-	Model            string
-	Instructions     string
-	OutputModalities []string
-	Tools            []Tool
-	ToolChoice       *ToolChoice
-	Metadata         map[string]json.RawMessage
+	Model                string
+	Instructions         string
+	OutputModalities     []string
+	InputAudioMediaType  string
+	OutputAudioMediaType string
+	Tools                []Tool
+	ToolChoice           *ToolChoice
+	Metadata             map[string]json.RawMessage
 }
 
 // RealtimeEvent keeps the provider wire payload alongside the portable subset.
