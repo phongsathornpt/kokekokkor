@@ -17,16 +17,35 @@ type realtimeEventEnvelope struct {
 }
 
 type realtimeSessionWire struct {
-	Model            string   `json:"model"`
-	Instructions     string   `json:"instructions"`
-	Modalities       []string `json:"modalities"`
-	OutputModalities []string `json:"output_modalities"`
+	Model            string            `json:"model"`
+	Instructions     string            `json:"instructions"`
+	Modalities       []string          `json:"modalities"`
+	OutputModalities []string          `json:"output_modalities"`
+	Tools            []realtimeToolWire `json:"tools"`
+	ToolChoice       json.RawMessage   `json:"tool_choice"`
+}
+
+type realtimeToolWire struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+type realtimeNamedToolChoiceWire struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Function struct {
+		Name string `json:"name"`
+	} `json:"function"`
 }
 
 type realtimeItemWire struct {
 	Type    string            `json:"type"`
 	Role    string            `json:"role"`
 	Content []json.RawMessage `json:"content"`
+	CallID  string            `json:"call_id"`
+	Output  string            `json:"output"`
 }
 
 type realtimeTextPartWire struct {
@@ -60,11 +79,12 @@ func DecodeRealtimeEvent(data []byte) (llm.RealtimeEvent, error) {
 		event.SessionConfig = session
 	}
 	if len(wire.Item) != 0 {
-		message, err := decodeRealtimeMessage(wire.Item)
+		message, toolResult, err := decodeRealtimeItem(wire.Item)
 		if err != nil {
 			return llm.RealtimeEvent{}, err
 		}
 		event.Message = message
+		event.ToolResult = toolResult
 	}
 
 	var fields map[string]json.RawMessage
@@ -96,6 +116,8 @@ func decodeRealtimeSession(data json.RawMessage) (*llm.RealtimeSessionConfig, er
 	delete(fields, "instructions")
 	delete(fields, "modalities")
 	delete(fields, "output_modalities")
+	delete(fields, "tools")
+	delete(fields, "tool_choice")
 
 	modalities := append([]string(nil), wire.OutputModalities...)
 	if len(modalities) == 0 {
@@ -106,41 +128,102 @@ func decodeRealtimeSession(data json.RawMessage) (*llm.RealtimeSessionConfig, er
 		Instructions:     wire.Instructions,
 		OutputModalities: modalities,
 	}
+	for _, tool := range wire.Tools {
+		if tool.Type != "function" {
+			return nil, fmt.Errorf("decode OpenAI Realtime session: unsupported tool type %q", tool.Type)
+		}
+		if tool.Name == "" || len(tool.Parameters) == 0 || !json.Valid(tool.Parameters) {
+			return nil, fmt.Errorf("decode OpenAI Realtime session: invalid function tool")
+		}
+		session.Tools = append(session.Tools, llm.Tool{
+			Name:        tool.Name,
+			Description: tool.Description,
+			InputSchema: cloneRawMessage(tool.Parameters),
+		})
+	}
+	if len(wire.ToolChoice) != 0 && string(wire.ToolChoice) != "null" {
+		choice, err := decodeRealtimeToolChoice(wire.ToolChoice)
+		if err != nil {
+			return nil, err
+		}
+		session.ToolChoice = choice
+	}
 	if len(fields) != 0 {
 		session.Metadata = fields
 	}
 	return session, nil
 }
 
-func decodeRealtimeMessage(data json.RawMessage) (*llm.Message, error) {
+func decodeRealtimeToolChoice(data json.RawMessage) (*llm.ToolChoice, error) {
+	var mode string
+	if err := json.Unmarshal(data, &mode); err == nil {
+		switch mode {
+		case "auto":
+			return &llm.ToolChoice{Mode: llm.ToolChoiceAuto}, nil
+		case "required":
+			return &llm.ToolChoice{Mode: llm.ToolChoiceRequired}, nil
+		case "none":
+			return &llm.ToolChoice{Mode: llm.ToolChoiceNone}, nil
+		default:
+			return nil, fmt.Errorf("decode OpenAI Realtime tool_choice: unsupported mode %q", mode)
+		}
+	}
+
+	var wire realtimeNamedToolChoiceWire
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return nil, fmt.Errorf("decode OpenAI Realtime tool_choice: %w", err)
+	}
+	if wire.Type != "function" {
+		return nil, fmt.Errorf("decode OpenAI Realtime tool_choice: unsupported type %q", wire.Type)
+	}
+	name := wire.Name
+	if name == "" {
+		name = wire.Function.Name
+	}
+	if name == "" {
+		return nil, fmt.Errorf("decode OpenAI Realtime tool_choice: missing function name")
+	}
+	return &llm.ToolChoice{Mode: llm.ToolChoiceNamed, Name: name}, nil
+}
+
+func decodeRealtimeItem(data json.RawMessage) (*llm.Message, *llm.ToolResultBlock, error) {
 	var wire realtimeItemWire
 	if err := json.Unmarshal(data, &wire); err != nil {
-		return nil, fmt.Errorf("decode OpenAI Realtime item: %w", err)
+		return nil, nil, fmt.Errorf("decode OpenAI Realtime item: %w", err)
+	}
+	if wire.Type == "function_call_output" {
+		if wire.CallID == "" {
+			return nil, nil, fmt.Errorf("decode OpenAI Realtime function_call_output: missing call_id")
+		}
+		return nil, &llm.ToolResultBlock{
+			ToolCallID: wire.CallID,
+			Content:    []llm.ContentBlock{llm.TextBlock{Text: wire.Output}},
+		}, nil
 	}
 	if wire.Type != "message" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	role := llm.Role(wire.Role)
 	switch role {
 	case llm.RoleSystem, llm.RoleDeveloper, llm.RoleUser, llm.RoleAssistant:
 	default:
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	message := &llm.Message{Role: role}
 	for _, raw := range wire.Content {
 		var part realtimeTextPartWire
 		if err := json.Unmarshal(raw, &part); err != nil {
-			return nil, fmt.Errorf("decode OpenAI Realtime item content: %w", err)
+			return nil, nil, fmt.Errorf("decode OpenAI Realtime item content: %w", err)
 		}
 		switch part.Type {
 		case "input_text", "text", "output_text":
 			message.Content = append(message.Content, llm.TextBlock{Text: part.Text})
 		default:
-			return nil, nil
+			return nil, nil, nil
 		}
 	}
-	return message, nil
+	return message, nil, nil
 }
 
 func realtimeEventType(wireType string) llm.RealtimeEventType {
