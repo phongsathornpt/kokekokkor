@@ -18,9 +18,10 @@ type Forwarder interface {
 }
 
 type Handler struct {
-	router     routing.Router
-	forwarder  Forwarder
-	translator CrossProtocolTranslator
+	router             routing.Router
+	forwarder          Forwarder
+	translator         CrossProtocolTranslator
+	realtimeTranslator RealtimeCrossProtocolTranslator
 }
 
 func NewHandler(router routing.Router, forwarder Forwarder, translators ...CrossProtocolTranslator) *Handler {
@@ -28,6 +29,12 @@ func NewHandler(router routing.Router, forwarder Forwarder, translators ...Cross
 	if len(translators) != 0 {
 		handler.translator = translators[0]
 	}
+	return handler
+}
+
+func NewHandlerWithRealtime(router routing.Router, forwarder Forwarder, realtime RealtimeCrossProtocolTranslator, translators ...CrossProtocolTranslator) *Handler {
+	handler := NewHandler(router, forwarder, translators...)
+	handler.realtimeTranslator = realtime
 	return handler
 }
 
