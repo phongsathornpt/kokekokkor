@@ -17,12 +17,12 @@ type realtimeEventEnvelope struct {
 }
 
 type realtimeSessionWire struct {
-	Model            string            `json:"model"`
-	Instructions     string            `json:"instructions"`
-	Modalities       []string          `json:"modalities"`
-	OutputModalities []string          `json:"output_modalities"`
+	Model            string             `json:"model"`
+	Instructions     string             `json:"instructions"`
+	Modalities       []string           `json:"modalities"`
+	OutputModalities []string           `json:"output_modalities"`
 	Tools            []realtimeToolWire `json:"tools"`
-	ToolChoice       json.RawMessage   `json:"tool_choice"`
+	ToolChoice       json.RawMessage    `json:"tool_choice"`
 }
 
 type realtimeToolWire struct {
