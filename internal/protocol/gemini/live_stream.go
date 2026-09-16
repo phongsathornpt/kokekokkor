@@ -123,7 +123,7 @@ func (d *LiveStreamDecoder) Decode(message LiveServerMessage) ([]llm.StreamEvent
 		}
 		stopReason := llm.StopReasonEndTurn
 		if content.Interrupted {
-			stopReason = llm.StopReasonUnknown
+			stopReason = llm.StopReasonCancelled
 		}
 		events = append(events, llm.StreamEvent{Type: llm.StreamEventResponseStop, StopReason: stopReason})
 		d.responseOpen = false
