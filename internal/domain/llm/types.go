@@ -62,6 +62,7 @@ func (ToolCallBlock) isContentBlock() {}
 
 type ToolResultBlock struct {
 	ToolCallID string
+	Name       string
 	Content    []ContentBlock
 	IsError    bool
 }
