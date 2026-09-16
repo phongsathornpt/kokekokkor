@@ -21,6 +21,12 @@ type TextBlock struct {
 
 func (TextBlock) isContentBlock() {}
 
+type AudioBlock struct {
+	MediaType string
+}
+
+func (AudioBlock) isContentBlock() {}
+
 type MediaSourceType string
 
 const (
