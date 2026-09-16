@@ -151,6 +151,7 @@ const (
 	StopReasonStopSequence StopReason = "stop_sequence"
 	StopReasonToolUse      StopReason = "tool_use"
 	StopReasonContentBlock StopReason = "content_filter"
+	StopReasonCancelled    StopReason = "cancelled"
 	StopReasonUnknown      StopReason = "unknown"
 )
 
