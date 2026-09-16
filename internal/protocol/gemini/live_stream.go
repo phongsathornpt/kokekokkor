@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,13 +9,15 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 )
 
-// LiveStreamDecoder converts the portable text/function subset of Gemini Live
-// server messages into canonical stream events. Control-plane messages such as
-// setupComplete and goAway are intentionally handled by the session bridge.
+const geminiLiveOutputAudioMediaType = "audio/pcm;rate=24000"
+
+// LiveStreamDecoder converts the portable text/function/audio subset of Gemini
+// Live server messages into canonical stream events.
 type LiveStreamDecoder struct {
 	model        string
 	responseOpen bool
 	contentOpen  bool
+	contentKind  string
 }
 
 type liveToolCallEnvelope struct {
@@ -41,7 +44,6 @@ func (d *LiveStreamDecoder) Decode(message LiveServerMessage) ([]llm.StreamEvent
 			return nil, nil
 		}
 	}
-
 	if message.ServerContent != nil && len(message.ServerContent.Metadata) != 0 {
 		return nil, errors.New("Gemini Live server content contains provider-specific metadata")
 	}
@@ -51,23 +53,51 @@ func (d *LiveStreamDecoder) Decode(message LiveServerMessage) ([]llm.StreamEvent
 
 	var events []llm.StreamEvent
 	content := message.ServerContent
-	if content != nil && (len(content.Text) != 0 || content.GenerationComplete || content.TurnComplete || content.Interrupted) {
+	if content != nil && len(content.Text) != 0 && len(content.Audio) != 0 {
+		return nil, errors.New("Gemini Live mixed text/audio output is not portable to OpenAI Realtime")
+	}
+	if content != nil && (len(content.Text) != 0 || len(content.Audio) != 0 || content.GenerationComplete || content.TurnComplete || content.Interrupted) {
 		if !d.responseOpen {
 			events = append(events, llm.StreamEvent{Type: llm.StreamEventResponseStart, Model: d.model})
 			d.responseOpen = true
 		}
-		if len(content.Text) != 0 && !d.contentOpen {
-			events = append(events, llm.StreamEvent{Type: llm.StreamEventContentStart, Index: 0, Block: llm.TextBlock{}})
-			d.contentOpen = true
+		if len(content.Text) != 0 {
+			if d.contentOpen && d.contentKind != "text" {
+				return nil, errors.New("Gemini Live changed output modality mid-content")
+			}
+			if !d.contentOpen {
+				events = append(events, llm.StreamEvent{Type: llm.StreamEventContentStart, Index: 0, Block: llm.TextBlock{}})
+				d.contentOpen = true
+				d.contentKind = "text"
+			}
+			for _, text := range content.Text {
+				events = append(events, llm.StreamEvent{Type: llm.StreamEventTextDelta, Index: 0, TextDelta: text})
+			}
 		}
-		for _, text := range content.Text {
-			events = append(events, llm.StreamEvent{Type: llm.StreamEventTextDelta, Index: 0, TextDelta: text})
+		if len(content.Audio) != 0 {
+			if d.contentOpen && d.contentKind != "audio" {
+				return nil, errors.New("Gemini Live changed output modality mid-content")
+			}
+			if !d.contentOpen {
+				events = append(events, llm.StreamEvent{Type: llm.StreamEventContentStart, Index: 0, Block: llm.AudioBlock{MediaType: geminiLiveOutputAudioMediaType}})
+				d.contentOpen = true
+				d.contentKind = "audio"
+			}
+			for _, audio := range content.Audio {
+				if audio.MediaType != geminiLiveOutputAudioMediaType {
+					return nil, fmt.Errorf("Gemini Live audio output has unsupported MIME type %q", audio.MediaType)
+				}
+				if _, err := base64.StdEncoding.DecodeString(audio.Data); err != nil {
+					return nil, fmt.Errorf("Gemini Live audio output is not valid base64: %w", err)
+				}
+				events = append(events, llm.StreamEvent{Type: llm.StreamEventAudioDelta, Index: 0, AudioDelta: audio.Data, AudioMediaType: audio.MediaType})
+			}
 		}
 	}
 
 	if len(message.ToolCall) != 0 {
 		if d.contentOpen {
-			return nil, errors.New("Gemini Live tool call arrived while text content was open")
+			return nil, errors.New("Gemini Live tool call arrived while content was open")
 		}
 		toolEvents, err := d.decodeToolCalls(message.ToolCall)
 		if err != nil {
@@ -89,6 +119,7 @@ func (d *LiveStreamDecoder) Decode(message LiveServerMessage) ([]llm.StreamEvent
 		if d.contentOpen {
 			events = append(events, llm.StreamEvent{Type: llm.StreamEventContentStop, Index: 0})
 			d.contentOpen = false
+			d.contentKind = ""
 		}
 		stopReason := llm.StopReasonEndTurn
 		if content.Interrupted {
@@ -129,20 +160,8 @@ func (d *LiveStreamDecoder) decodeToolCalls(data json.RawMessage) ([]llm.StreamE
 			return nil, fmt.Errorf("Gemini Live function call %q has invalid arguments", call.Name)
 		}
 		events = append(events,
-			llm.StreamEvent{
-				Type:  llm.StreamEventToolCallStart,
-				Index: index,
-				Block: llm.ToolCallBlock{ID: call.ID, Name: call.Name, Arguments: json.RawMessage(`{}`)},
-			},
-			llm.StreamEvent{
-				Type:  llm.StreamEventToolCallDelta,
-				Index: index,
-				ToolCallDelta: &llm.ToolCallDelta{
-					ID:             call.ID,
-					Name:           call.Name,
-					ArgumentsDelta: string(args),
-				},
-			},
+			llm.StreamEvent{Type: llm.StreamEventToolCallStart, Index: index, Block: llm.ToolCallBlock{ID: call.ID, Name: call.Name, Arguments: json.RawMessage(`{}`)}},
+			llm.StreamEvent{Type: llm.StreamEventToolCallDelta, Index: index, ToolCallDelta: &llm.ToolCallDelta{ID: call.ID, Name: call.Name, ArgumentsDelta: string(args)}},
 			llm.StreamEvent{Type: llm.StreamEventContentStop, Index: index},
 		)
 	}
