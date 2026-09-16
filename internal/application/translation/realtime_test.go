@@ -10,9 +10,30 @@ import (
 
 func TestOpenAIRealtimeToGeminiTextEventPortableSubset(t *testing.T) {
 	tests := []llm.RealtimeEvent{
-		{Type: llm.RealtimeEventSessionStart, WireType: "session.start", Session: json.RawMessage(`{"model":"gpt-realtime"}`)},
-		{Type: llm.RealtimeEventSessionUpdate, WireType: "session.update", Session: json.RawMessage(`{"instructions":"be concise"}`)},
-		{Type: llm.RealtimeEventItemCreate, WireType: "conversation.item.create", Item: json.RawMessage(`{"type":"message"}`)},
+		{
+			Type:     llm.RealtimeEventSessionStart,
+			WireType: "session.start",
+			SessionConfig: &llm.RealtimeSessionConfig{
+				Model:            "gpt-realtime",
+				OutputModalities: []string{"text"},
+			},
+		},
+		{
+			Type:     llm.RealtimeEventSessionUpdate,
+			WireType: "session.update",
+			SessionConfig: &llm.RealtimeSessionConfig{
+				Instructions:     "be concise",
+				OutputModalities: []string{"text"},
+			},
+		},
+		{
+			Type:     llm.RealtimeEventItemCreate,
+			WireType: "conversation.item.create",
+			Message: &llm.Message{
+				Role:    llm.RoleUser,
+				Content: []llm.ContentBlock{llm.TextBlock{Text: "hello"}},
+			},
+		},
 		{Type: llm.RealtimeEventResponseCreate, WireType: "response.create"},
 	}
 
@@ -53,15 +74,56 @@ func TestOpenAIRealtimeToGeminiTextEventRejectsProviderMetadata(t *testing.T) {
 	if err == nil {
 		t.Fatal("provider metadata accepted, want compatibility error")
 	}
+
+	err = OpenAIRealtimeToGeminiTextEvent(llm.RealtimeEvent{
+		Type:     llm.RealtimeEventSessionUpdate,
+		WireType: "session.update",
+		SessionConfig: &llm.RealtimeSessionConfig{
+			OutputModalities: []string{"text"},
+			Metadata:         map[string]json.RawMessage{"voice": json.RawMessage(`"alloy"`)},
+		},
+	})
+	if err == nil {
+		t.Fatal("provider session metadata accepted, want compatibility error")
+	}
 }
 
-func TestOpenAIRealtimeToGeminiTextEventRequiresPayloads(t *testing.T) {
+func TestOpenAIRealtimeToGeminiTextEventRequiresCanonicalPayloads(t *testing.T) {
 	for _, event := range []llm.RealtimeEvent{
-		{Type: llm.RealtimeEventSessionUpdate, WireType: "session.update"},
-		{Type: llm.RealtimeEventItemCreate, WireType: "conversation.item.create"},
+		{Type: llm.RealtimeEventSessionUpdate, WireType: "session.update", Session: json.RawMessage(`{"output_modalities":["text"]}`)},
+		{Type: llm.RealtimeEventItemCreate, WireType: "conversation.item.create", Item: json.RawMessage(`{"type":"message"}`)},
 	} {
 		if err := OpenAIRealtimeToGeminiTextEvent(event); err == nil {
-			t.Fatalf("event %q missing payload accepted", event.Type)
+			t.Fatalf("event %q missing canonical payload accepted", event.Type)
 		}
+	}
+}
+
+func TestOpenAIRealtimeToGeminiTextEventRequiresTextOnlyOutput(t *testing.T) {
+	for _, modalities := range [][]string{nil, {"audio"}, {"text", "audio"}} {
+		err := OpenAIRealtimeToGeminiTextEvent(llm.RealtimeEvent{
+			Type:     llm.RealtimeEventSessionUpdate,
+			WireType: "session.update",
+			SessionConfig: &llm.RealtimeSessionConfig{
+				OutputModalities: modalities,
+			},
+		})
+		if err == nil {
+			t.Fatalf("modalities %#v accepted", modalities)
+		}
+	}
+}
+
+func TestOpenAIRealtimeToGeminiTextEventRejectsNonConversationRole(t *testing.T) {
+	err := OpenAIRealtimeToGeminiTextEvent(llm.RealtimeEvent{
+		Type:     llm.RealtimeEventItemCreate,
+		WireType: "conversation.item.create",
+		Message: &llm.Message{
+			Role:    llm.RoleDeveloper,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "instruction"}},
+		},
+	})
+	if err == nil {
+		t.Fatal("developer realtime item accepted")
 	}
 }
