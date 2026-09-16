@@ -19,17 +19,25 @@ const (
 	RealtimeEventResponseCancel   RealtimeEventType = "response_cancel"
 )
 
-// RealtimeEvent is intentionally small. Translation code can reason about the
-// portable control operation while retaining provider payloads until an exact
-// semantic mapping exists. Provider-specific fields must not be silently
-// discarded when crossing protocols.
+type RealtimeSessionConfig struct {
+	Model            string
+	Instructions     string
+	OutputModalities []string
+	Metadata         map[string]json.RawMessage
+}
+
+// RealtimeEvent keeps the provider wire payload alongside the portable subset.
+// Translation code must reject provider-specific fields it cannot represent
+// rather than silently discarding them.
 type RealtimeEvent struct {
-	Type     RealtimeEventType
-	EventID  string
-	WireType string
-	Session  json.RawMessage
-	Item     json.RawMessage
-	Audio    string
-	Response json.RawMessage
-	Metadata map[string]json.RawMessage
+	Type          RealtimeEventType
+	EventID       string
+	WireType      string
+	Session       json.RawMessage
+	SessionConfig *RealtimeSessionConfig
+	Item          json.RawMessage
+	Message       *Message
+	Audio         string
+	Response      json.RawMessage
+	Metadata      map[string]json.RawMessage
 }
