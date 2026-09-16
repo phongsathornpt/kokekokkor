@@ -3,6 +3,7 @@ package translator
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
 	geminiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/gemini"
@@ -19,6 +20,7 @@ var (
 // messages into ClientMessage and ServerMessage; the bridge returns zero or
 // more complete text messages for the opposite peer.
 type RealtimeSessionBridge struct {
+	mu            sync.Mutex
 	clientEncoder *geminiProtocol.LiveClientEncoder
 	streamDecoder *geminiProtocol.LiveStreamDecoder
 	serverEncoder *openaiProtocol.RealtimeServerEncoder
@@ -38,6 +40,9 @@ func NewRealtimeSessionBridge(geminiModel string) *RealtimeSessionBridge {
 // client messages. The first portable event must configure the session. Gemini
 // content is held at the boundary until setupComplete has been observed.
 func (b *RealtimeSessionBridge) ClientMessage(data []byte) ([][]byte, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	event, err := openaiProtocol.DecodeRealtimeEvent(data)
 	if err != nil {
 		return nil, apptranslation.WrapRequest(err)
@@ -68,6 +73,9 @@ func (b *RealtimeSessionBridge) ClientMessage(data []byte) ([][]byte, error) {
 // Realtime server events. setupComplete is consumed as bridge state; provider-
 // local lifecycle controls fail explicitly until an exact OpenAI mapping exists.
 func (b *RealtimeSessionBridge) ServerMessage(data []byte) ([][]byte, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	message, err := geminiProtocol.DecodeLiveServerMessage(data)
 	if err != nil {
 		return nil, apptranslation.WrapResponse(err)
@@ -101,5 +109,7 @@ func (b *RealtimeSessionBridge) ServerMessage(data []byte) ([][]byte, error) {
 }
 
 func (b *RealtimeSessionBridge) SetupComplete() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.setupComplete
 }
