@@ -17,6 +17,7 @@ fuzz:
 	go test ./internal/protocol/gemini -run='^$$' -fuzz='^FuzzDecodeGenerateContentRequest$$' -fuzztime=$(FUZZ_TIME)
 	go test ./internal/protocol/openai -run='^$$' -fuzz='^FuzzDecodeChatRequest$$' -fuzztime=$(FUZZ_TIME)
 	go test ./internal/protocol/openai -run='^$$' -fuzz='^FuzzDecodeResponsesRequest$$' -fuzztime=$(FUZZ_TIME)
+	go test ./internal/protocol/sse -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZ_TIME)
 
 modcheck:
 	go mod tidy -diff
