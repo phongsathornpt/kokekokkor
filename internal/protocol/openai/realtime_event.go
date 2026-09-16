@@ -7,6 +7,8 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 )
 
+const openAIRealtimePCM16MediaType = "audio/pcm;rate=24000"
+
 type realtimeEventEnvelope struct {
 	Type     string          `json:"type"`
 	EventID  string          `json:"event_id"`
@@ -17,12 +19,14 @@ type realtimeEventEnvelope struct {
 }
 
 type realtimeSessionWire struct {
-	Model            string             `json:"model"`
-	Instructions     string             `json:"instructions"`
-	Modalities       []string           `json:"modalities"`
-	OutputModalities []string           `json:"output_modalities"`
-	Tools            []realtimeToolWire `json:"tools"`
-	ToolChoice       json.RawMessage    `json:"tool_choice"`
+	Model             string             `json:"model"`
+	Instructions      string             `json:"instructions"`
+	Modalities        []string           `json:"modalities"`
+	OutputModalities  []string           `json:"output_modalities"`
+	InputAudioFormat  string             `json:"input_audio_format"`
+	OutputAudioFormat string             `json:"output_audio_format"`
+	Tools             []realtimeToolWire `json:"tools"`
+	ToolChoice        json.RawMessage    `json:"tool_choice"`
 }
 
 type realtimeToolWire struct {
@@ -116,6 +120,8 @@ func decodeRealtimeSession(data json.RawMessage) (*llm.RealtimeSessionConfig, er
 	delete(fields, "instructions")
 	delete(fields, "modalities")
 	delete(fields, "output_modalities")
+	delete(fields, "input_audio_format")
+	delete(fields, "output_audio_format")
 	delete(fields, "tools")
 	delete(fields, "tool_choice")
 
@@ -127,6 +133,18 @@ func decodeRealtimeSession(data json.RawMessage) (*llm.RealtimeSessionConfig, er
 		Model:            wire.Model,
 		Instructions:     wire.Instructions,
 		OutputModalities: modalities,
+	}
+	if wire.InputAudioFormat != "" {
+		if wire.InputAudioFormat != "pcm16" {
+			return nil, fmt.Errorf("decode OpenAI Realtime session: unsupported input_audio_format %q", wire.InputAudioFormat)
+		}
+		session.InputAudioMediaType = openAIRealtimePCM16MediaType
+	}
+	if wire.OutputAudioFormat != "" {
+		if wire.OutputAudioFormat != "pcm16" {
+			return nil, fmt.Errorf("decode OpenAI Realtime session: unsupported output_audio_format %q", wire.OutputAudioFormat)
+		}
+		session.OutputAudioMediaType = openAIRealtimePCM16MediaType
 	}
 	for _, tool := range wire.Tools {
 		if tool.Type != "function" {
