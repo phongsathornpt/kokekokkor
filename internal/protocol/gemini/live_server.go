@@ -16,14 +16,14 @@ type LiveServerContent struct {
 }
 
 type LiveServerMessage struct {
-	SetupComplete          bool
-	ServerContent          *LiveServerContent
-	Usage                  *llm.Usage
-	ToolCall               json.RawMessage
-	ToolCallCancellation   json.RawMessage
-	GoAway                 json.RawMessage
+	SetupComplete           bool
+	ServerContent           *LiveServerContent
+	Usage                   *llm.Usage
+	ToolCall                json.RawMessage
+	ToolCallCancellation    json.RawMessage
+	GoAway                  json.RawMessage
 	SessionResumptionUpdate json.RawMessage
-	Metadata               map[string]json.RawMessage
+	Metadata                map[string]json.RawMessage
 }
 
 type liveServerEnvelope struct {
