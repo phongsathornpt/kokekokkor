@@ -23,6 +23,8 @@ type RealtimeSessionConfig struct {
 	Model            string
 	Instructions     string
 	OutputModalities []string
+	Tools            []Tool
+	ToolChoice       *ToolChoice
 	Metadata         map[string]json.RawMessage
 }
 
@@ -37,6 +39,7 @@ type RealtimeEvent struct {
 	SessionConfig *RealtimeSessionConfig
 	Item          json.RawMessage
 	Message       *Message
+	ToolResult    *ToolResultBlock
 	Audio         string
 	Response      json.RawMessage
 	Metadata      map[string]json.RawMessage
