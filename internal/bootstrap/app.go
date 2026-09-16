@@ -18,6 +18,7 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/provider/openaicompat"
 	"github.com/phongsathornpt/kokekokkor/internal/translator"
 	"github.com/phongsathornpt/kokekokkor/internal/transport/httpserver"
+	realtimeTransport "github.com/phongsathornpt/kokekokkor/internal/transport/realtime"
 	"github.com/phongsathornpt/kokekokkor/internal/transport/upstreamhttp"
 )
 
@@ -91,7 +92,8 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	crossProtocol := translator.New(bufferedUpstream)
 
 	openAIUpstream := openaicompat.NewWithBearerTokenResolver(logger, oauth.bearerTokens)
-	openAI := openaiProtocol.NewHandler(router, openAIUpstream, crossProtocol)
+	realtimeBridge := realtimeTransport.NewGeminiBridge(oauth.bearerTokens)
+	openAI := openaiProtocol.NewHandlerWithRealtime(router, openAIUpstream, realtimeBridge, crossProtocol)
 
 	anthropicUpstream := anthropicProvider.NewWithBearerTokenResolver(logger, cfg.Anthropic.Version, oauth.bearerTokens)
 	anthropicAPI := anthropicProtocol.NewRoutedHandler(router, anthropicTarget, anthropicUpstream, crossProtocol)
