@@ -10,6 +10,10 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 )
 
+type RealtimeCrossProtocolTranslator interface {
+	ServeOpenAIRealtimeToGemini(http.ResponseWriter, *http.Request, provider.Target, string, string) error
+}
+
 func isRealtimeWebSocketRequest(r *http.Request) bool {
 	if r == nil || r.Method != http.MethodGet || r.URL.Path != "/v1/realtime" {
 		return false
@@ -28,21 +32,33 @@ func isRealtimeWebSocketRequest(r *http.Request) bool {
 func (h *Handler) serveRealtimeWebSocket(w http.ResponseWriter, r *http.Request, plan routing.Plan, requestedModel string) {
 	var lastErr error
 	for i, attempt := range plan.Attempts {
-		if attempt.Target.EffectiveProtocol() != provider.ProtocolOpenAI {
-			lastErr = fmt.Errorf("Realtime WebSocket translation to %s is not implemented", attempt.Target.EffectiveProtocol())
-			continue
-		}
+		switch attempt.Target.EffectiveProtocol() {
+		case provider.ProtocolOpenAI:
+			attemptRequest := r
+			if attempt.Model != requestedModel {
+				attemptRequest = cloneWithQueryModel(r, attempt.Model)
+			}
+			allowFallback := i < len(plan.Attempts)-1
+			if err := h.forwarder.ServeHTTPTo(w, attemptRequest, attempt.Target, allowFallback); err != nil {
+				lastErr = err
+				continue
+			}
+			return
 
-		attemptRequest := r
-		if attempt.Model != requestedModel {
-			attemptRequest = cloneWithQueryModel(r, attempt.Model)
+		case provider.ProtocolGemini:
+			if h.realtimeTranslator == nil {
+				lastErr = errors.New("Realtime Gemini translator is not configured")
+				continue
+			}
+			if err := h.realtimeTranslator.ServeOpenAIRealtimeToGemini(w, r, attempt.Target, requestedModel, attempt.Model); err != nil {
+				lastErr = err
+				continue
+			}
+			return
+
+		default:
+			lastErr = fmt.Errorf("Realtime WebSocket translation to %s is not implemented", attempt.Target.EffectiveProtocol())
 		}
-		allowFallback := i < len(plan.Attempts)-1
-		if err := h.forwarder.ServeHTTPTo(w, attemptRequest, attempt.Target, allowFallback); err != nil {
-			lastErr = err
-			continue
-		}
-		return
 	}
 
 	if lastErr == nil {
