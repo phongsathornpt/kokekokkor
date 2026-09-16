@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
@@ -33,7 +34,7 @@ func NewGeminiBridge(bearerTokens bearerTokenResolver) *GeminiBridge {
 // upgrading the downstream connection. Failures returned from this method are
 // therefore safe for route fallback. After the downstream upgrade succeeds,
 // the bridge owns the session and reports failures as Realtime error events.
-func (b *GeminiBridge) ServeOpenAIRealtimeToGemini(w http.ResponseWriter, r *http.Request, target provider.Target, model string) error {
+func (b *GeminiBridge) ServeOpenAIRealtimeToGemini(w http.ResponseWriter, r *http.Request, target provider.Target, requestedModel, targetModel string) error {
 	if target.EffectiveProtocol() != provider.ProtocolGemini {
 		return fmt.Errorf("realtime bridge target %q is not Gemini", target.ID)
 	}
@@ -41,15 +42,9 @@ func (b *GeminiBridge) ServeOpenAIRealtimeToGemini(w http.ResponseWriter, r *htt
 	if err != nil {
 		return err
 	}
-	upstream, response, err := ws.Dial(r.Context(), upstreamURL, header)
+	upstream, _, err := ws.Dial(r.Context(), upstreamURL, header)
 	if err != nil {
-		if response != nil && response.Body != nil {
-			_ = response.Body.Close()
-		}
 		return fmt.Errorf("dial Gemini Live upstream: %w", err)
-	}
-	if response != nil && response.Body != nil {
-		_ = response.Body.Close()
 	}
 
 	downstream, err := ws.Accept(w, r)
@@ -60,7 +55,7 @@ func (b *GeminiBridge) ServeOpenAIRealtimeToGemini(w http.ResponseWriter, r *htt
 	defer downstream.Close()
 	defer upstream.Close()
 
-	created, err := openaiProtocol.EncodeRealtimeSessionCreated(model)
+	created, err := openaiProtocol.EncodeRealtimeSessionCreated(requestedModel)
 	if err != nil {
 		return nil
 	}
@@ -68,7 +63,7 @@ func (b *GeminiBridge) ServeOpenAIRealtimeToGemini(w http.ResponseWriter, r *htt
 		return nil
 	}
 
-	bridge := translator.NewRealtimeSessionBridge(model)
+	bridge := translator.NewRealtimeSessionBridge(targetModel)
 	b.runSession(r.Context(), downstream, upstream, bridge)
 	return nil
 }
@@ -130,15 +125,17 @@ func (b *GeminiBridge) runSession(ctx context.Context, downstream, upstream *ws.
 	}()
 
 	err := <-errCh
-	cancel()
-	_ = downstream.Close()
-	_ = upstream.Close()
 	if err != nil && !errors.Is(err, ws.ErrClosed) && !errors.Is(err, context.Canceled) {
 		payload, encodeErr := openaiProtocol.EncodeRealtimeError("translation_error", err.Error())
 		if encodeErr == nil {
-			_ = downstream.WriteText(context.Background(), payload)
+			errorCtx, errorCancel := context.WithTimeout(context.Background(), time.Second)
+			_ = downstream.WriteText(errorCtx, payload)
+			errorCancel()
 		}
 	}
+	cancel()
+	_ = downstream.Close()
+	_ = upstream.Close()
 }
 
 func (b *GeminiBridge) clientToGemini(ctx context.Context, downstream, upstream *ws.Conn, bridge *translator.RealtimeSessionBridge, setupReady <-chan struct{}) error {
