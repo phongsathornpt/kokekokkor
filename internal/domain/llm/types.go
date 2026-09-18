@@ -151,6 +151,12 @@ type ResponseFormat struct {
 	Strict      bool
 }
 
+type ResponseState struct {
+	PreviousResponseID string
+	ConversationID     string
+	Store              bool
+}
+
 type Request struct {
 	Model           string
 	Messages        []Message
@@ -158,6 +164,7 @@ type Request struct {
 	ToolChoice      *ToolChoice
 	Reasoning       *ReasoningConfig
 	ResponseFormat  *ResponseFormat
+	ResponseState   *ResponseState
 	MaxOutputTokens *int
 	Temperature     *float64
 	TopP            *float64
@@ -186,7 +193,9 @@ type Usage struct {
 }
 
 type Response struct {
-	ID           string
+	ID                 string
+	PreviousResponseID string
+	ConversationID     string
 	Model        string
 	Content      []ContentBlock
 	StopReason   StopReason
