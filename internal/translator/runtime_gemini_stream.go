@@ -177,7 +177,6 @@ func (r *Runtime) GeminiStreamGenerateContentToOpenAI(ctx context.Context, targe
 	return response, nil
 }
 
-
 func bufferedResponsesRefusal(events []llm.StreamEvent) bool {
 	for i := len(events) - 1; i >= 0; i-- {
 		if events[i].Type == llm.StreamEventResponseStop {
