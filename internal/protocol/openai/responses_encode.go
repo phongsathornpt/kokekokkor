@@ -27,16 +27,16 @@ func EncodeResponsesResponse(response llm.Response) ([]byte, error) {
 	}
 	now := time.Now().Unix()
 	wire := responseObject{
-		ID:                response.ID,
-		Object:            "response",
-		CreatedAt:         now,
-		Status:            status,
-		Error:             nil,
-		IncompleteDetails: incomplete,
+		ID:                 response.ID,
+		Object:             "response",
+		CreatedAt:          now,
+		Status:             status,
+		Error:              nil,
+		IncompleteDetails:  incomplete,
 		Model:              response.Model,
 		PreviousResponseID: response.PreviousResponseID,
 		Output:             output,
-		OutputText:        outputText,
+		OutputText:         outputText,
 		Usage: responseUsage{
 			InputTokens: response.Usage.InputTokens,
 			InputTokensDetails: responseInputTokenDetails{
