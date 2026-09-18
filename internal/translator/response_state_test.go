@@ -39,7 +39,7 @@ func TestResponsesStateContinuationDoesNotInheritInstructions(t *testing.T) {
 			{Role: llm.RoleUser, Content: []llm.ContentBlock{llm.TextBlock{Text: "follow up"}}},
 		},
 		ResponseState: &llm.ResponseState{
-			PreviousResponseID: "resp_1",
+			PreviousResponseID:  "resp_1",
 			InstructionMessages: 1,
 		},
 	}
