@@ -22,6 +22,7 @@ kokekokkor currently includes:
 - buffered refusal/content-block output mapped to OpenAI Responses refusal parts
 - canonical stream failures mapped to OpenAI Responses `response.failed`
 - OpenAI-compatible Realtime WebSocket passthrough with routing, aliases, auth replacement, and fallback before upgrade
+- translated OpenAI Realtime -> Gemini Live sessions for portable text, function tools, and raw PCM16 audio
 - provider API-key auth plus OAuth/PKCE profiles with refreshable persisted credentials
 - encrypted SQLite credential persistence with key rotation support
 - SQLite-backed provider/routing catalog management
@@ -82,7 +83,7 @@ Once response bytes have been committed, the selected attempt is final. The gate
 
 ## Cross-protocol streaming
 
-Translated streams share a canonical event pipeline:
+Translated HTTP streams share a canonical event pipeline:
 
 ```text
 upstream SSE
@@ -95,7 +96,7 @@ upstream SSE
 
 Portable text, tool-call lifecycle, usage, finish reasons, and supported reasoning summaries remain incremental. Provider-specific opaque continuation state is not fabricated across protocols.
 
-OpenAI Realtime currently uses transparent WebSocket proxying only. Cross-provider live-event translation is deliberately unsupported until there is a defensible portable realtime event model.
+OpenAI Realtime keeps native OpenAI-compatible WebSocket traffic transparent. When an OpenAI Realtime route targets Gemini, kokekokkor instead uses a bounded bidirectional WebSocket bridge through a canonical realtime session model. The portable subset currently covers text, function tools, and raw 16-bit PCM audio. Controls without an exact Gemini Live equivalent, including `response.cancel`, remain explicit compatibility errors rather than mutating conversation history to imitate cancellation.
 
 ## Persistence, admin, and credentials
 
@@ -164,13 +165,13 @@ make build
 
 ```text
 client
-  -> HTTP transport / protocol auth
+  -> HTTP / WebSocket transport / protocol auth
   -> request correlation / access logging
   -> protocol handler
   -> immutable routing plan
        same protocol
          -> transparent reverse proxy
-       different protocol
+       different HTTP protocol
          -> decode wire request
          -> canonical semantic IR
          -> compatibility policy
@@ -178,6 +179,9 @@ client
          -> upstream HTTP
               non-stream -> buffered response translation
               stream     -> provider SSE -> StreamEvent -> target SSE
+       OpenAI Realtime -> Gemini Live
+         -> canonical realtime controls / stream events
+         -> bounded bidirectional WebSocket bridge
   -> client
 ```
 

@@ -10,7 +10,7 @@ kokekokkor keeps same-protocol traffic transparent and only enters the canonical
 | OpenAI Responses | native passthrough | buffered + streaming translation | buffered + streaming translation |
 | Anthropic Messages | buffered + streaming translation | native passthrough | buffered + streaming translation |
 | Gemini generateContent | buffered + streaming translation | buffered + streaming translation | native passthrough |
-| OpenAI Realtime WebSocket | native passthrough / alias / fallback | unsupported cross-protocol | unsupported cross-protocol |
+| OpenAI Realtime WebSocket | native passthrough / alias / fallback | unsupported cross-protocol | translated text + function tools + PCM16 audio |
 
 ## Portable translated semantics
 
@@ -31,6 +31,19 @@ The canonical layer currently preserves the portable subset shared by the partic
 - buffered refusal/content-block output into OpenAI Responses refusal parts
 - provider stream failures into OpenAI Responses `response.failed` when a portable code/message exists
 
+### OpenAI Realtime -> Gemini Live
+
+The translated Realtime bridge currently preserves:
+
+- session setup/update for the portable model, instructions, and single response-modality subset
+- conversation text items and incremental Gemini text output
+- function declarations, tool choice, streamed function-call arguments, and function-call results
+- raw 16-bit PCM audio input and output without gateway transcoding
+- Gemini Live usage and interruption/turn-completion boundaries where they map to OpenAI Realtime lifecycle events
+- routed model aliases, ordered fallback before downstream WebSocket upgrade, provider credential replacement, and OAuth bearer-token precedence
+
+The bridge establishes Gemini Live before upgrading the downstream OpenAI Realtime connection. Pre-upgrade failures therefore remain eligible for route fallback; after upgrade, translation failures are reported as Realtime error events and the selected route is final.
+
 ## Deliberate strict boundaries
 
 The following are intentionally rejected instead of being silently flattened or guessed:
@@ -45,8 +58,12 @@ The following are intentionally rejected instead of being silently flattened or 
 - Gemini provider-local file URIs as Anthropic file IDs, and the reverse
 - non-text Gemini system semantics and ambiguous mixed system/developer instruction precedence
 - provider-specific safety/generation controls without an exact semantic equivalent
-- streamed media output that the canonical stream does not model
-- cross-provider Realtime/live event translation; only OpenAI-compatible WebSocket passthrough is implemented
+- streamed media output outside the explicitly modeled Realtime PCM audio path
+- OpenAI Realtime -> Anthropic live-event translation
+- OpenAI Realtime `response.cancel`; Gemini Live can be interrupted by sending new client content, but that content is also appended to conversation history, so it is not an exact cancellation equivalent
+- OpenAI Realtime input-buffer clear while Gemini automatic activity detection is in use
+- Gemini Live tool-call cancellation, provider-local go-away, and session-resumption state where OpenAI Realtime has no exact semantic equivalent
+- mixed Realtime text + audio output where the OpenAI and Gemini session contracts cannot preserve one unambiguous output modality
 
 ### Streaming refusal boundary
 
