@@ -181,7 +181,6 @@ func TestResponsesToAnthropicRejectsWebSearch(t *testing.T) {
 	}
 }
 
-
 func TestResponsesToGeminiStreamRejectsWebSearch(t *testing.T) {
 	request := llm.Request{
 		Messages: []llm.Message{{
