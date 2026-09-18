@@ -151,6 +151,40 @@ func TestEncodeResponsesResponseURLCitation(t *testing.T) {
 	}
 }
 
+func TestEncodeResponsesResponseWebSearchCall(t *testing.T) {
+	encoded, err := EncodeResponsesResponse(llm.Response{
+		ID:    "resp_search",
+		Model: "gemini-upstream",
+		Content: []llm.ContentBlock{
+			llm.WebSearchCallBlock{Queries: []string{"query one", "query two"}},
+			llm.TextBlock{Text: "answer"},
+		},
+		StopReason: llm.StopReasonEndTurn,
+	})
+	if err != nil {
+		t.Fatalf("EncodeResponsesResponse() error = %v", err)
+	}
+	var response struct {
+		Output []struct {
+			Type   string `json:"type"`
+			Status string `json:"status"`
+			Action *struct {
+				Type    string   `json:"type"`
+				Queries []string `json:"queries"`
+			} `json:"action"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(encoded, &response); err != nil {
+		t.Fatalf("decode encoded response: %v", err)
+	}
+	if len(response.Output) != 2 || response.Output[0].Type != "web_search_call" || response.Output[0].Status != "completed" || response.Output[0].Action == nil {
+		t.Fatalf("output = %#v", response.Output)
+	}
+	if response.Output[0].Action.Type != "search" || len(response.Output[0].Action.Queries) != 2 || response.Output[0].Action.Queries[0] != "query one" {
+		t.Fatalf("action = %#v", response.Output[0].Action)
+	}
+}
+
 func TestEncodeResponsesResponseRefusal(t *testing.T) {
 	encoded, err := EncodeResponsesResponse(llm.Response{
 		ID:         "msg_refusal",

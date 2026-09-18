@@ -72,6 +72,13 @@ func validateContent(block ContentBlock) error {
 			}
 		}
 		return nil
+	case WebSearchCallBlock:
+		for _, query := range value.Queries {
+			if query == "" {
+				return ErrInvalidContent
+			}
+		}
+		return nil
 	case ImageBlock:
 		return validateMediaSource(value.Source)
 	case DocumentBlock:
