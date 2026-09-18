@@ -95,7 +95,7 @@ func (e *ResponsesStreamEncoder) startResponse(event llm.StreamEvent) error {
 		return fmt.Errorf("Responses stream received duplicate response start")
 	}
 	e.started = true
-	e.id = responsesStreamID(event.ResponseID)
+	e.id = NormalizeResponsesID(event.ResponseID)
 	e.model = event.Model
 	e.createdAt = time.Now().Unix()
 
@@ -437,7 +437,7 @@ func (e *ResponsesStreamEncoder) addObfuscation(fields map[string]any) {
 	fields["obfuscation"] = base64.RawURLEncoding.EncodeToString(raw[:])
 }
 
-func responsesStreamID(upstreamID string) string {
+func NormalizeResponsesID(upstreamID string) string {
 	if strings.HasPrefix(upstreamID, "resp_") {
 		return upstreamID
 	}
