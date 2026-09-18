@@ -29,6 +29,7 @@ The canonical layer currently preserves the portable subset shared by the partic
 - provider reasoning summaries into OpenAI Responses, including streaming summary events
 - prompt/output/cache-read/reasoning-token usage where the target exposes an equivalent field
 - buffered refusal/content-block output into OpenAI Responses refusal parts
+- opt-in streamed refusal fidelity for translated OpenAI Responses via `stream_options.buffer_refusals`
 - provider stream failures into OpenAI Responses `response.failed` when a portable code/message exists
 
 ### OpenAI Realtime -> Gemini Live
@@ -65,9 +66,11 @@ The following are intentionally rejected instead of being silently flattened or 
 - Gemini Live tool-call cancellation, provider-local go-away, and session-resumption state where OpenAI Realtime has no exact semantic equivalent
 - mixed Realtime text + audio output where the OpenAI and Gemini session contracts cannot preserve one unambiguous output modality
 
-### Streaming refusal boundary
+### Streaming refusal policy
 
-Buffered Anthropic/Gemini content-block outcomes can map to OpenAI Responses refusal parts. A fully lossless `response.refusal.delta` translation is not generally possible with the current upstream signals because Anthropic/Gemini may reveal the refusal/safety finish reason only after ordinary text deltas have already been emitted. Reclassifying already-streamed output would be incorrect, while buffering the complete stream would defeat streaming. The gateway therefore keeps this boundary explicit until an earlier upstream refusal signal or a justified buffered policy exists.
+Anthropic/Gemini may reveal refusal or safety stop reasons only after ordinary text deltas have already arrived. By default, translated Responses streams therefore remain incremental and reject a late content-block outcome rather than reclassifying bytes already sent downstream.
+
+Clients that require exact OpenAI refusal events can set `stream_options.buffer_refusals=true`. The gateway then buffers the complete upstream stream, inspects the terminal stop reason, and emits either normal output-text events or `response.refusal.delta` / `response.refusal.done` events. This preserves semantics at the cost of streaming latency.
 
 ## Failure and fallback policy
 
