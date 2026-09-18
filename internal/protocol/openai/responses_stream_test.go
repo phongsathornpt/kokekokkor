@@ -132,6 +132,32 @@ func TestResponsesStreamEncoderFunctionCallLifecycle(t *testing.T) {
 	}
 }
 
+func TestResponsesStreamEncoderRefusalLifecycle(t *testing.T) {
+	var buffer bytes.Buffer
+	encoder := NewResponsesStreamEncoder(&buffer, false)
+	encoder.SetRefusalMode(true)
+	for _, event := range []llm.StreamEvent{
+		{Type: llm.StreamEventResponseStart, ResponseID: "msg_refusal", Model: "claude"},
+		{Type: llm.StreamEventContentStart, Index: 0, Block: llm.TextBlock{}},
+		{Type: llm.StreamEventTextDelta, Index: 0, TextDelta: "I can't help with that."},
+		{Type: llm.StreamEventContentStop, Index: 0},
+		{Type: llm.StreamEventResponseStop, StopReason: llm.StopReasonContentBlock},
+	} {
+		if err := encoder.Encode(event); err != nil {
+			t.Fatalf("Encode(%q) error = %v", event.Type, err)
+		}
+	}
+	text := buffer.String()
+	for _, want := range []string{"response.refusal.delta", "response.refusal.done", "response.completed", `"type":"refusal"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("refusal stream missing %q: %s", want, text)
+		}
+	}
+	if strings.Contains(text, "response.output_text.delta") || strings.Contains(text, `"output_text":"I can't help with that."`) {
+		t.Fatalf("refusal leaked as output text: %s", text)
+	}
+}
+
 func TestResponsesStreamEncoderObfuscatesDeltasByDefault(t *testing.T) {
 	var buffer bytes.Buffer
 	encoder := NewResponsesStreamEncoder(&buffer, true)

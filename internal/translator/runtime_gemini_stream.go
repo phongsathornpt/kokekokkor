@@ -96,12 +96,33 @@ func (r *Runtime) OpenAIResponsesToGeminiStream(ctx context.Context, target prov
 	}
 	translated := translateStream(response.Body, func(source io.Reader, sink io.Writer) error {
 		encoder := openaiProtocol.NewResponsesStreamEncoder(sink, options.IncludeObfuscation)
-		return geminiProtocol.DecodeGenerateContentStream(source, func(event llm.StreamEvent) error {
-			if err := apptranslation.GeminiToResponsesStreamEvent(event); err != nil {
+		if !options.BufferRefusals {
+			return geminiProtocol.DecodeGenerateContentStream(source, func(event llm.StreamEvent) error {
+				if err := apptranslation.GeminiToResponsesStreamEvent(event); err != nil {
+					return err
+				}
+				return encoder.Encode(event)
+			})
+		}
+		var events []llm.StreamEvent
+		if err := geminiProtocol.DecodeGenerateContentStream(source, func(event llm.StreamEvent) error {
+			if err := apptranslation.GeminiToResponsesBufferedStreamEvent(event); err != nil {
 				return err
 			}
-			return encoder.Encode(event)
-		})
+			events = append(events, event)
+			return nil
+		}); err != nil {
+			return err
+		}
+		if bufferedResponsesRefusal(events) {
+			encoder.SetRefusalMode(true)
+		}
+		for _, event := range events {
+			if err := encoder.Encode(event); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	primed, err := primeStream(translated)
 	if err != nil {
@@ -154,4 +175,13 @@ func (r *Runtime) GeminiStreamGenerateContentToOpenAI(ctx context.Context, targe
 	response.Body = primed
 	response.Header = translatedStreamHeaders(response.Header)
 	return response, nil
+}
+
+func bufferedResponsesRefusal(events []llm.StreamEvent) bool {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type == llm.StreamEventResponseStop {
+			return events[i].StopReason == llm.StopReasonContentBlock
+		}
+	}
+	return false
 }
