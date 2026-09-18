@@ -26,6 +26,11 @@ func OpenAIToGeminiStreamRequest(request llm.Request) (llm.Request, OpenAIStream
 }
 
 func ResponsesToGeminiStreamRequest(request llm.Request) (llm.Request, ResponsesStreamOptions, error) {
+	for _, tool := range request.Tools {
+		if tool.Kind == llm.ToolKindWebSearch {
+			return llm.Request{}, ResponsesStreamOptions{}, unsupported("web_search streaming", "Gemini grounding search calls and citations are not yet losslessly represented in translated Responses streams")
+		}
+	}
 	metadata := cloneMetadata(request.Metadata)
 	if err := requireStreaming(metadata); err != nil {
 		return llm.Request{}, ResponsesStreamOptions{}, err
