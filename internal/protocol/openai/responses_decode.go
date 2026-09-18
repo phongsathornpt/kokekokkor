@@ -390,7 +390,6 @@ func responseToolExtras(object map[string]json.RawMessage, known ...string) []st
 	return extras
 }
 
-
 func decodeResponsesState(wire responsesRequest) (*llm.ResponseState, error) {
 	state := &llm.ResponseState{PreviousResponseID: wire.PreviousResponseID}
 	if wire.Store != nil {
