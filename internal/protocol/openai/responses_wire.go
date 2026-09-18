@@ -3,18 +3,22 @@ package openai
 import "encoding/json"
 
 type responsesRequest struct {
-	Model             string                   `json:"model"`
-	Instructions      json.RawMessage          `json:"instructions,omitempty"`
-	Input             json.RawMessage          `json:"input,omitempty"`
-	Tools             []responseTool           `json:"tools,omitempty"`
-	ToolChoice        json.RawMessage          `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool                    `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens   *int                     `json:"max_output_tokens,omitempty"`
-	Temperature       *float64                 `json:"temperature,omitempty"`
-	TopP              *float64                 `json:"top_p,omitempty"`
-	Reasoning         *responseReasoningConfig `json:"reasoning,omitempty"`
-	Text              json.RawMessage          `json:"text,omitempty"`
-	Stream            bool                     `json:"stream,omitempty"`
+	Model              string                   `json:"model"`
+	Instructions       json.RawMessage          `json:"instructions,omitempty"`
+	Input              json.RawMessage          `json:"input,omitempty"`
+	Tools              []responseTool           `json:"tools,omitempty"`
+	ToolChoice         json.RawMessage          `json:"tool_choice,omitempty"`
+	ParallelToolCalls  *bool                    `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens    *int                     `json:"max_output_tokens,omitempty"`
+	Temperature        *float64                 `json:"temperature,omitempty"`
+	TopP               *float64                 `json:"top_p,omitempty"`
+	Reasoning          *responseReasoningConfig `json:"reasoning,omitempty"`
+	Text               json.RawMessage          `json:"text,omitempty"`
+	PreviousResponseID string                   `json:"previous_response_id,omitempty"`
+	Conversation       json.RawMessage          `json:"conversation,omitempty"`
+	Store              *bool                    `json:"store,omitempty"`
+	Background         *bool                    `json:"background,omitempty"`
+	Stream             bool                     `json:"stream,omitempty"`
 }
 
 type responseReasoningConfig struct {
@@ -40,6 +44,9 @@ type responseContentPart struct {
 	Text     string `json:"text,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
 	FileID   string `json:"file_id,omitempty"`
+	FileData string `json:"file_data,omitempty"`
+	FileURL  string `json:"file_url,omitempty"`
+	Filename string `json:"filename,omitempty"`
 	Detail   string `json:"detail,omitempty"`
 }
 
@@ -51,18 +58,24 @@ type responseTool struct {
 	Strict      bool            `json:"strict,omitempty"`
 }
 
+type responseConversation struct {
+	ID string `json:"id"`
+}
+
 type responseObject struct {
-	ID                string               `json:"id"`
-	Object            string               `json:"object"`
-	CreatedAt         int64                `json:"created_at"`
-	CompletedAt       int64                `json:"completed_at,omitempty"`
-	Status            string               `json:"status"`
-	Error             any                  `json:"error"`
-	IncompleteDetails any                  `json:"incomplete_details"`
-	Model             string               `json:"model"`
-	Output            []responseOutputItem `json:"output"`
-	OutputText        string               `json:"output_text,omitempty"`
-	Usage             responseUsage        `json:"usage"`
+	ID                 string                `json:"id"`
+	Object             string                `json:"object"`
+	CreatedAt          int64                 `json:"created_at"`
+	CompletedAt        int64                 `json:"completed_at,omitempty"`
+	Status             string                `json:"status"`
+	Error              any                   `json:"error"`
+	IncompleteDetails  any                   `json:"incomplete_details"`
+	Model              string                `json:"model"`
+	PreviousResponseID string                `json:"previous_response_id,omitempty"`
+	Conversation       *responseConversation `json:"conversation,omitempty"`
+	Output             []responseOutputItem  `json:"output"`
+	OutputText         string                `json:"output_text,omitempty"`
+	Usage              responseUsage         `json:"usage"`
 }
 
 type responseWebSearchAction struct {

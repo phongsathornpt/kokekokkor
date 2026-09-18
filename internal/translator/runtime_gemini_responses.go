@@ -22,6 +22,10 @@ func (r *Runtime) OpenAIResponsesToGemini(ctx context.Context, target provider.T
 		return upstream.Response{}, apptranslation.WrapRequest(err)
 	}
 	request.Model = model
+	request, statePlan, err := r.resolveResponsesState(ctx, request)
+	if err != nil {
+		return upstream.Response{}, apptranslation.WrapRequest(err)
+	}
 	request, err = apptranslation.ResponsesToGeminiRequest(request)
 	if err != nil {
 		return upstream.Response{}, err
@@ -51,6 +55,13 @@ func (r *Runtime) OpenAIResponsesToGemini(ctx context.Context, target provider.T
 	}
 	canonical, err = apptranslation.GeminiToResponsesResponse(canonical)
 	if err != nil {
+		return upstream.Response{}, apptranslation.WrapResponse(err)
+	}
+	if statePlan.state != nil {
+		canonical.PreviousResponseID = statePlan.state.PreviousResponseID
+		canonical.ConversationID = statePlan.state.ConversationID
+	}
+	if err := r.persistResponsesState(ctx, statePlan, canonical); err != nil {
 		return upstream.Response{}, apptranslation.WrapResponse(err)
 	}
 	encodedResponse, err := openaiProtocol.EncodeResponsesResponse(canonical)

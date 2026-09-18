@@ -8,16 +8,31 @@ import (
 	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
 	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/domain/responsestate"
 	anthropicProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/anthropic"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
 )
 
 type Runtime struct {
-	client upstream.Client
+	client        upstream.Client
+	responseState responsestate.Store
+	backgroundMu  sync.Mutex
+	background    map[string]context.CancelFunc
 }
 
 func New(client upstream.Client) *Runtime {
-	return &Runtime{client: client}
+	return NewWithResponseStateStore(client, newMemoryResponseStateStore())
+}
+
+func NewWithResponseStateStore(client upstream.Client, responseState responsestate.Store) *Runtime {
+	if responseState == nil {
+		responseState = newMemoryResponseStateStore()
+	}
+	return &Runtime{
+		client:        client,
+		responseState: responseState,
+		background:    make(map[string]context.CancelFunc),
+	}
 }
 
 func (r *Runtime) OpenAIChatToAnthropic(ctx context.Context, target provider.Target, model string, header http.Header, body []byte) (upstream.Response, error) {

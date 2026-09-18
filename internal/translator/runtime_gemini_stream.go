@@ -72,6 +72,10 @@ func (r *Runtime) OpenAIResponsesToGeminiStream(ctx context.Context, target prov
 		return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
 	}
 	request.Model = model
+	request, statePlan, err := r.resolveResponsesState(ctx, request)
+	if err != nil {
+		return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
+	}
 	request, options, err := apptranslation.ResponsesToGeminiStreamRequest(request)
 	if err != nil {
 		return upstream.StreamResponse{}, err
@@ -96,10 +100,22 @@ func (r *Runtime) OpenAIResponsesToGeminiStream(ctx context.Context, target prov
 	}
 	translated := translateStream(response.Body, func(source io.Reader, sink io.Writer) error {
 		encoder := openaiProtocol.NewResponsesStreamEncoder(sink, options.IncludeObfuscation)
+		if statePlan.state != nil {
+			encoder.SetState(statePlan.state.PreviousResponseID, statePlan.state.ConversationID, statePlan.state.Store)
+		}
+		stateAccumulator := newResponseStateStreamAccumulator()
 		if !options.BufferRefusals {
 			return geminiProtocol.DecodeGenerateContentStream(source, func(event llm.StreamEvent) error {
 				if err := apptranslation.GeminiToResponsesStreamEvent(event); err != nil {
 					return err
+				}
+				if err := stateAccumulator.Observe(event); err != nil {
+					return err
+				}
+				if event.Type == llm.StreamEventResponseStop {
+					if err := stateAccumulator.Persist(ctx, r, statePlan); err != nil {
+						return err
+					}
 				}
 				return encoder.Encode(event)
 			})
@@ -109,11 +125,17 @@ func (r *Runtime) OpenAIResponsesToGeminiStream(ctx context.Context, target prov
 			if err := apptranslation.GeminiToResponsesBufferedStreamEvent(event); err != nil {
 				return err
 			}
+			if err := stateAccumulator.Observe(event); err != nil {
+				return err
+			}
 			return buffer.Append(event)
 		}); err != nil {
 			return err
 		}
 		events := buffer.Events()
+		if err := stateAccumulator.Persist(ctx, r, statePlan); err != nil {
+			return err
+		}
 		if bufferedResponsesRefusal(events) {
 			encoder.SetRefusalMode(true)
 		}

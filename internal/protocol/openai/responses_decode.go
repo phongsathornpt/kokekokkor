@@ -2,6 +2,7 @@ package openai
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -24,6 +25,7 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 	for _, key := range []string{
 		"model", "instructions", "input", "tools", "tool_choice",
 		"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning", "text",
+		"previous_response_id", "conversation", "store", "background",
 	} {
 		delete(raw, key)
 	}
@@ -35,6 +37,11 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 		TopP:            wire.TopP,
 		Metadata:        raw,
 	}
+	state, err := decodeResponsesState(wire)
+	if err != nil {
+		return llm.Request{}, err
+	}
+	request.ResponseState = state
 	if wire.Reasoning != nil {
 		request.Reasoning = decodeResponsesReasoning(*wire.Reasoning)
 	}
@@ -62,6 +69,10 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 				Role:    llm.RoleDeveloper,
 				Content: []llm.ContentBlock{llm.TextBlock{Text: instructions}},
 			})
+			if request.ResponseState == nil {
+				request.ResponseState = &llm.ResponseState{}
+			}
+			request.ResponseState.InstructionMessages = 1
 		}
 	}
 
@@ -272,10 +283,26 @@ func decodeResponsesContent(raw json.RawMessage) ([]llm.ContentBlock, error) {
 			}
 			blocks = append(blocks, llm.ImageBlock{Source: decodeImageURL(part.ImageURL)})
 		case "input_file":
-			if part.FileID == "" {
-				return nil, fmt.Errorf("input_file translation currently requires file_id")
+			switch {
+			case part.FileData != "":
+				mediaType, data, ok := parseDataURL(part.FileData)
+				if !ok {
+					return nil, fmt.Errorf("input_file file_data must be a base64 data URL")
+				}
+				if _, err := base64.StdEncoding.DecodeString(data); err != nil {
+					return nil, fmt.Errorf("input_file file_data contains invalid base64: %w", err)
+				}
+				blocks = append(blocks, llm.DocumentBlock{
+					Source: llm.MediaSource{Type: llm.MediaSourceBase64, MediaType: mediaType, Data: data},
+					Name:   part.Filename,
+				})
+			case part.FileID != "":
+				blocks = append(blocks, llm.DocumentBlock{Source: llm.MediaSource{Type: llm.MediaSourceFile, FileID: part.FileID}, Name: part.Filename})
+			case part.FileURL != "":
+				blocks = append(blocks, llm.DocumentBlock{Source: llm.MediaSource{Type: llm.MediaSourceURL, URL: part.FileURL}, Name: part.Filename})
+			default:
+				return nil, fmt.Errorf("input_file requires file_data, file_id, or file_url")
 			}
-			blocks = append(blocks, llm.DocumentBlock{Source: llm.MediaSource{Type: llm.MediaSourceFile, FileID: part.FileID}})
 		default:
 			return nil, fmt.Errorf("unsupported Responses content part %q", part.Type)
 		}
@@ -361,4 +388,31 @@ func responseToolExtras(object map[string]json.RawMessage, known ...string) []st
 	}
 	sort.Strings(extras)
 	return extras
+}
+
+func decodeResponsesState(wire responsesRequest) (*llm.ResponseState, error) {
+	state := &llm.ResponseState{PreviousResponseID: wire.PreviousResponseID, Store: true}
+	if wire.Store != nil {
+		state.Store = *wire.Store
+	}
+	if wire.Background != nil {
+		state.Background = *wire.Background
+	}
+	if len(wire.Conversation) != 0 && string(wire.Conversation) != "null" {
+		var id string
+		if err := json.Unmarshal(wire.Conversation, &id); err != nil {
+			var object struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(wire.Conversation, &object); err != nil || object.ID == "" {
+				return nil, fmt.Errorf("Responses conversation must be a string or object with id")
+			}
+			id = object.ID
+		}
+		state.ConversationID = id
+	}
+	if state.PreviousResponseID != "" && state.ConversationID != "" {
+		return nil, fmt.Errorf("Responses previous_response_id cannot be used with conversation")
+	}
+	return state, nil
 }
