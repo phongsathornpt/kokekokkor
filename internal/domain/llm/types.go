@@ -29,6 +29,12 @@ type TextBlock struct {
 
 func (TextBlock) isContentBlock() {}
 
+type WebSearchCallBlock struct {
+	Queries []string
+}
+
+func (WebSearchCallBlock) isContentBlock() {}
+
 type AudioBlock struct {
 	MediaType string
 }

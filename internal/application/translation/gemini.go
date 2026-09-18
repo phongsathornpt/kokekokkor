@@ -148,6 +148,8 @@ func GeminiToOpenAIResponse(response llm.Response) (llm.Response, error) {
 	}
 	for _, block := range response.Content {
 		switch block.(type) {
+		case llm.WebSearchCallBlock:
+			return llm.Response{}, unsupported("web search", "Chat Completions output cannot represent Gemini web-search calls")
 		case llm.DocumentBlock, llm.ImageBlock:
 			return llm.Response{}, unsupported("response media", "Chat Completions cannot represent Gemini media output")
 		}

@@ -94,7 +94,7 @@ func TestDecodeGenerateContentResponsePreservesProviderMetadata(t *testing.T) {
 		"candidates":[{
 			"content":{"role":"model","parts":[{"text":"grounded"}]},
 			"finishReason":"STOP",
-			"groundingMetadata":{"webSearchQueries":["example query"]}
+			"groundingMetadata":{"searchEntryPoint":{"renderedContent":"provider-ui"}}
 		}],
 		"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2,"trafficType":"ON_DEMAND"}
 	}`))
@@ -132,6 +132,40 @@ func TestDecodeGenerateContentResponseMapsWebGroundingToCitations(t *testing.T) 
 	citation := text.Citations[0]
 	if citation.StartIndex != 8 || citation.EndIndex != 13 || citation.URL != "https://example.com/weather" || citation.Title != "Weather" {
 		t.Fatalf("citation = %#v", citation)
+	}
+	if len(response.Metadata) != 0 {
+		t.Fatalf("metadata = %#v, want grounding consumed", response.Metadata)
+	}
+}
+
+func TestDecodeGenerateContentResponseMapsWebSearchCall(t *testing.T) {
+	response, err := DecodeGenerateContentResponse([]byte(`{
+		"candidates":[{
+			"content":{"role":"model","parts":[{"text":"grounded"}]},
+			"finishReason":"STOP",
+			"groundingMetadata":{
+				"webSearchQueries":["query one","query two"],
+				"groundingChunks":[{"web":{"uri":"https://example.com/source","title":"Source"}}],
+				"groundingSupports":[{
+					"segment":{"partIndex":0,"startIndex":0,"endIndex":8,"text":"grounded"},
+					"groundingChunkIndices":[0]
+				}]
+			}
+		}]
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeGenerateContentResponse() error = %v", err)
+	}
+	if len(response.Content) != 2 {
+		t.Fatalf("content = %#v", response.Content)
+	}
+	search, ok := response.Content[0].(llm.WebSearchCallBlock)
+	if !ok || len(search.Queries) != 2 || search.Queries[0] != "query one" || search.Queries[1] != "query two" {
+		t.Fatalf("search call = %#v", response.Content[0])
+	}
+	text, ok := response.Content[1].(llm.TextBlock)
+	if !ok || len(text.Citations) != 1 {
+		t.Fatalf("text = %#v", response.Content[1])
 	}
 	if len(response.Metadata) != 0 {
 		t.Fatalf("metadata = %#v, want grounding consumed", response.Metadata)
