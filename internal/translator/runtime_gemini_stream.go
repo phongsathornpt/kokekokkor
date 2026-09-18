@@ -104,16 +104,16 @@ func (r *Runtime) OpenAIResponsesToGeminiStream(ctx context.Context, target prov
 				return encoder.Encode(event)
 			})
 		}
-		var events []llm.StreamEvent
+		var buffer responsesEventBuffer
 		if err := geminiProtocol.DecodeGenerateContentStream(source, func(event llm.StreamEvent) error {
 			if err := apptranslation.GeminiToResponsesBufferedStreamEvent(event); err != nil {
 				return err
 			}
-			events = append(events, event)
-			return nil
+			return buffer.Append(event)
 		}); err != nil {
 			return err
 		}
+		events := buffer.Events()
 		if bufferedResponsesRefusal(events) {
 			encoder.SetRefusalMode(true)
 		}
