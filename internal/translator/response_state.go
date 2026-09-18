@@ -129,6 +129,7 @@ func (r *Runtime) persistResponsesState(ctx context.Context, plan responseStateP
 	if plan.state == nil {
 		return nil
 	}
+	response.ID = openaiProtocol.NormalizeResponsesID(response.ID)
 	message, continuable := responseStateAssistantMessage(response.Content)
 	history := append([]llm.Message(nil), plan.history...)
 	if len(message.Content) != 0 {
