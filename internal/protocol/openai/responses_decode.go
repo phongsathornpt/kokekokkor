@@ -25,7 +25,7 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 	for _, key := range []string{
 		"model", "instructions", "input", "tools", "tool_choice",
 		"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning", "text",
-		"previous_response_id", "conversation", "store",
+		"previous_response_id", "conversation", "store", "background",
 	} {
 		delete(raw, key)
 	}
@@ -394,6 +394,9 @@ func decodeResponsesState(wire responsesRequest) (*llm.ResponseState, error) {
 	state := &llm.ResponseState{PreviousResponseID: wire.PreviousResponseID, Store: true}
 	if wire.Store != nil {
 		state.Store = *wire.Store
+	}
+	if wire.Background != nil {
+		state.Background = *wire.Background
 	}
 	if len(wire.Conversation) != 0 && string(wire.Conversation) != "null" {
 		var id string
