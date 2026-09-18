@@ -8,6 +8,28 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 )
 
+func TestResponsesToAnthropicAllowsExplicitStatelessFlags(t *testing.T) {
+	maxTokens := 32
+	request := llm.Request{
+		MaxOutputTokens: &maxTokens,
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "hello"}},
+		}},
+		Metadata: map[string]json.RawMessage{
+			"store":      json.RawMessage("false"),
+			"background": json.RawMessage("false"),
+		},
+	}
+	translated, err := ResponsesToAnthropicRequest(request)
+	if err != nil {
+		t.Fatalf("ResponsesToAnthropicRequest() error = %v", err)
+	}
+	if len(translated.Metadata) != 0 {
+		t.Fatalf("metadata = %#v, want consumed stateless flags", translated.Metadata)
+	}
+}
+
 func TestResponsesToAnthropicRejectsProviderState(t *testing.T) {
 	maxTokens := 32
 	request := llm.Request{
@@ -73,5 +95,39 @@ func TestAnthropicToResponsesAllowsThinkingSummary(t *testing.T) {
 	reasoning, ok := translated.Content[0].(llm.ReasoningBlock)
 	if !ok || reasoning.Text != "summary" || reasoning.Signature != "" {
 		t.Fatalf("reasoning = %#v", translated.Content[0])
+	}
+}
+
+func TestResponsesToGeminiAllowsExplicitStatelessFlags(t *testing.T) {
+	request := llm.Request{
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "hello"}},
+		}},
+		Metadata: map[string]json.RawMessage{
+			"store":      json.RawMessage("false"),
+			"background": json.RawMessage("false"),
+		},
+	}
+	translated, err := ResponsesToGeminiRequest(request)
+	if err != nil {
+		t.Fatalf("ResponsesToGeminiRequest() error = %v", err)
+	}
+	if len(translated.Metadata) != 0 {
+		t.Fatalf("metadata = %#v, want consumed stateless flags", translated.Metadata)
+	}
+}
+
+func TestResponsesToGeminiRejectsBackgroundExecution(t *testing.T) {
+	request := llm.Request{
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "hello"}},
+		}},
+		Metadata: map[string]json.RawMessage{"background": json.RawMessage("true")},
+	}
+	_, err := ResponsesToGeminiRequest(request)
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("error = %v, want ErrUnsupported", err)
 	}
 }
