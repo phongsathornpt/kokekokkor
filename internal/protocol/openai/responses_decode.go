@@ -391,7 +391,7 @@ func responseToolExtras(object map[string]json.RawMessage, known ...string) []st
 }
 
 func decodeResponsesState(wire responsesRequest) (*llm.ResponseState, error) {
-	state := &llm.ResponseState{PreviousResponseID: wire.PreviousResponseID}
+	state := &llm.ResponseState{PreviousResponseID: wire.PreviousResponseID, Store: true}
 	if wire.Store != nil {
 		state.Store = *wire.Store
 	}
@@ -410,9 +410,6 @@ func decodeResponsesState(wire responsesRequest) (*llm.ResponseState, error) {
 	}
 	if state.PreviousResponseID != "" && state.ConversationID != "" {
 		return nil, fmt.Errorf("Responses previous_response_id cannot be used with conversation")
-	}
-	if state.PreviousResponseID == "" && state.ConversationID == "" && wire.Store == nil {
-		return nil, nil
 	}
 	return state, nil
 }
