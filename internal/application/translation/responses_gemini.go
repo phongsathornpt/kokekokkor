@@ -8,6 +8,9 @@ import (
 
 func ResponsesToGeminiRequest(request llm.Request) (llm.Request, error) {
 	metadata := cloneMetadata(request.Metadata)
+	if err := consumeResponsesStatelessFlags(metadata); err != nil {
+		return llm.Request{}, err
+	}
 	if err := consumeStreaming(metadata); err != nil {
 		return llm.Request{}, err
 	}
