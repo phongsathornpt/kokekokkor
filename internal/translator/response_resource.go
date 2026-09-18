@@ -22,7 +22,7 @@ func (r *Runtime) HandleStoredResponse(ctx context.Context, method, path string)
 	case http.MethodGet:
 		record, err := r.responseState.LoadResponse(ctx, trimmed)
 		if errors.Is(err, responsestate.ErrNotFound) {
-			return responseNotFound(trimmed)
+			return 0, nil, false, nil
 		}
 		if err != nil {
 			return 0, nil, true, err
@@ -33,7 +33,7 @@ func (r *Runtime) HandleStoredResponse(ctx context.Context, method, path string)
 		return http.StatusOK, append([]byte(nil), record.Payload...), true, nil
 	case http.MethodDelete:
 		if err := r.responseState.DeleteResponse(ctx, trimmed); errors.Is(err, responsestate.ErrNotFound) {
-			return responseNotFound(trimmed)
+			return 0, nil, false, nil
 		} else if err != nil {
 			return 0, nil, true, err
 		}
