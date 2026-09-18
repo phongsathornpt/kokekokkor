@@ -29,17 +29,11 @@ func DecodeGenerateContentResponse(data []byte) (llm.Response, error) {
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return llm.Response{}, fmt.Errorf("decode Gemini candidate metadata: %w", err)
 	}
+	var candidateMetadata map[string]json.RawMessage
 	if len(envelope.Candidates) == 1 {
-		candidateMetadata, err := topLevelMetadata(envelope.Candidates[0], "content", "finishReason")
+		candidateMetadata, err = topLevelMetadata(envelope.Candidates[0], "content", "finishReason")
 		if err != nil {
 			return llm.Response{}, err
-		}
-		if len(candidateMetadata) != 0 {
-			raw, err := json.Marshal(candidateMetadata)
-			if err != nil {
-				return llm.Response{}, err
-			}
-			metadata = putMetadata(metadata, "gemini.candidate", raw)
 		}
 	}
 	content, partMetadata, err := decodeGeminiParts(candidate.Content.Parts, 0, make(map[string]string))
@@ -48,6 +42,23 @@ func DecodeGenerateContentResponse(data []byte) (llm.Response, error) {
 	}
 	for key, value := range partMetadata {
 		metadata = putMetadata(metadata, key, value)
+	}
+	if raw := candidateMetadata["groundingMetadata"]; len(raw) != 0 {
+		grounded, consumed, err := applyGeminiGrounding(content, raw)
+		if err != nil {
+			return llm.Response{}, err
+		}
+		content = grounded
+		if consumed {
+			delete(candidateMetadata, "groundingMetadata")
+		}
+	}
+	if len(candidateMetadata) != 0 {
+		raw, err := json.Marshal(candidateMetadata)
+		if err != nil {
+			return llm.Response{}, err
+		}
+		metadata = putMetadata(metadata, "gemini.candidate", raw)
 	}
 	response := llm.Response{
 		ID:         wire.ResponseID,
@@ -127,4 +138,79 @@ func encodeGeminiFinishReason(reason llm.StopReason) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported canonical stop reason %q for Gemini", reason)
 	}
+}
+
+func applyGeminiGrounding(content []llm.ContentBlock, raw json.RawMessage) ([]llm.ContentBlock, bool, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, false, fmt.Errorf("decode Gemini groundingMetadata: %w", err)
+	}
+	for key := range object {
+		if key != "groundingChunks" && key != "groundingSupports" {
+			return content, false, nil
+		}
+	}
+
+	var grounding struct {
+		Chunks []struct {
+			Web *struct {
+				URI   string `json:"uri"`
+				Title string `json:"title"`
+			} `json:"web,omitempty"`
+		} `json:"groundingChunks"`
+		Supports []struct {
+			GroundingChunkIndices []int `json:"groundingChunkIndices"`
+			Segment               struct {
+				PartIndex  int `json:"partIndex"`
+				StartIndex int `json:"startIndex"`
+				EndIndex   int `json:"endIndex"`
+			} `json:"segment"`
+		} `json:"groundingSupports"`
+	}
+	if err := json.Unmarshal(raw, &grounding); err != nil {
+		return nil, false, fmt.Errorf("decode Gemini grounding metadata: %w", err)
+	}
+
+	out := append([]llm.ContentBlock(nil), content...)
+	for _, support := range grounding.Supports {
+		if support.Segment.PartIndex < 0 || support.Segment.PartIndex >= len(out) {
+			return nil, false, fmt.Errorf("Gemini grounding segment partIndex %d is out of range", support.Segment.PartIndex)
+		}
+		text, ok := out[support.Segment.PartIndex].(llm.TextBlock)
+		if !ok {
+			return nil, false, fmt.Errorf("Gemini grounding segment references non-text part %d", support.Segment.PartIndex)
+		}
+		start, err := runeIndexForByteOffset(text.Text, support.Segment.StartIndex)
+		if err != nil {
+			return nil, false, err
+		}
+		end, err := runeIndexForByteOffset(text.Text, support.Segment.EndIndex)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, index := range support.GroundingChunkIndices {
+			if index < 0 || index >= len(grounding.Chunks) || grounding.Chunks[index].Web == nil || grounding.Chunks[index].Web.URI == "" {
+				return content, false, nil
+			}
+			web := grounding.Chunks[index].Web
+			text.Citations = append(text.Citations, llm.URLCitation{
+				StartIndex: start,
+				EndIndex:   end,
+				URL:        web.URI,
+				Title:      web.Title,
+			})
+		}
+		out[support.Segment.PartIndex] = text
+	}
+	return out, true, nil
+}
+
+func runeIndexForByteOffset(text string, offset int) (int, error) {
+	if offset < 0 || offset > len(text) {
+		return 0, fmt.Errorf("Gemini grounding byte offset %d is out of range", offset)
+	}
+	if offset != len(text) && offset > 0 && (text[offset]&0xc0) == 0x80 {
+		return 0, fmt.Errorf("Gemini grounding byte offset %d splits a UTF-8 code point", offset)
+	}
+	return len([]rune(text[:offset])), nil
 }

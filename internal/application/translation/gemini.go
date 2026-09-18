@@ -117,7 +117,11 @@ func OpenAIToGeminiResponse(response llm.Response) (llm.Response, error) {
 		return llm.Response{}, unsupported("finish_reason", "OpenAI finish reason has no Gemini finishReason mapping")
 	}
 	for _, block := range response.Content {
-		switch block.(type) {
+		switch value := block.(type) {
+		case llm.TextBlock:
+			if len(value.Citations) != 0 {
+				return llm.Response{}, unsupported("citations", "Chat Completions output cannot preserve Gemini URL citations")
+			}
 		case llm.DocumentBlock, llm.ImageBlock:
 			return llm.Response{}, unsupported("response media", "Gemini response translation currently supports text and function calls only")
 		case llm.ReasoningBlock:

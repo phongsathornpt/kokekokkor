@@ -94,8 +94,12 @@ func portableGeminiAnthropicResponse(response llm.Response, source string) (llm.
 		return llm.Response{}, unsupported("stop reason", source+" stop reason has no portable mapping")
 	}
 	for _, block := range response.Content {
-		switch block.(type) {
-		case llm.TextBlock, llm.ToolCallBlock:
+		switch value := block.(type) {
+		case llm.TextBlock:
+			if len(value.Citations) != 0 {
+				return llm.Response{}, unsupported("citations", source+" URL citations cannot be represented portably")
+			}
+		case llm.ToolCallBlock:
 		case llm.ReasoningBlock:
 			return llm.Response{}, unsupported("thinking", source+" reasoning/thought output is not translated yet")
 		default:

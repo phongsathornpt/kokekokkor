@@ -108,6 +108,36 @@ func TestDecodeGenerateContentResponsePreservesProviderMetadata(t *testing.T) {
 	}
 }
 
+func TestDecodeGenerateContentResponseMapsWebGroundingToCitations(t *testing.T) {
+	response, err := DecodeGenerateContentResponse([]byte(`{
+		"candidates":[{
+			"content":{"role":"model","parts":[{"text":"Bangkok อากาศดี"}]},
+			"finishReason":"STOP",
+			"groundingMetadata":{
+				"groundingChunks":[{"web":{"uri":"https://example.com/weather","title":"Weather"}}],
+				"groundingSupports":[{
+					"segment":{"partIndex":0,"startIndex":8,"endIndex":23,"text":"อากาศ"},
+					"groundingChunkIndices":[0]
+				}]
+			}
+		}]
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeGenerateContentResponse() error = %v", err)
+	}
+	text, ok := response.Content[0].(llm.TextBlock)
+	if !ok || len(text.Citations) != 1 {
+		t.Fatalf("text block = %#v", response.Content[0])
+	}
+	citation := text.Citations[0]
+	if citation.StartIndex != 8 || citation.EndIndex != 13 || citation.URL != "https://example.com/weather" || citation.Title != "Weather" {
+		t.Fatalf("citation = %#v", citation)
+	}
+	if len(response.Metadata) != 0 {
+		t.Fatalf("metadata = %#v, want grounding consumed", response.Metadata)
+	}
+}
+
 func TestDecodeGenerateContentResponseTreatsFunctionCallAsToolUse(t *testing.T) {
 	response, err := DecodeGenerateContentResponse([]byte(`{
 		"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"weather","args":{"city":"Bangkok"}}}]},"finishReason":"STOP"}]
