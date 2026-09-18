@@ -37,6 +37,8 @@ type ResponsesStreamEncoder struct {
 	blocks             map[int]*responsesStreamBlock
 	allText            strings.Builder
 	refusalMode        bool
+	previousResponseID string
+	store              bool
 }
 
 func NewResponsesStreamEncoder(w io.Writer, includeObfuscation bool) *ResponsesStreamEncoder {
@@ -49,6 +51,11 @@ func NewResponsesStreamEncoder(w io.Writer, includeObfuscation bool) *ResponsesS
 
 func (e *ResponsesStreamEncoder) SetRefusalMode(enabled bool) {
 	e.refusalMode = enabled
+}
+
+func (e *ResponsesStreamEncoder) SetState(previousResponseID string, store bool) {
+	e.previousResponseID = previousResponseID
+	e.store = store
 }
 
 func (e *ResponsesStreamEncoder) Encode(event llm.StreamEvent) error {
@@ -382,6 +389,10 @@ func (e *ResponsesStreamEncoder) snapshot(status string, incomplete any, complet
 		completedAt = &now
 	}
 	usage := encodeResponsesStreamUsage(e.latestUsage)
+	var previousResponseID any
+	if e.previousResponseID != "" {
+		previousResponseID = e.previousResponseID
+	}
 	return responsesStreamSnapshot{
 		ID:                e.id,
 		Object:            "response",
@@ -394,9 +405,10 @@ func (e *ResponsesStreamEncoder) snapshot(status string, incomplete any, complet
 		Output:            append([]responseOutputItem(nil), e.output...),
 		OutputText:        e.allText.String(),
 		Usage:             &usage,
-		ParallelToolCalls: true,
+		ParallelToolCalls:  true,
+		PreviousResponseID: previousResponseID,
 		Reasoning:         map[string]any{"effort": nil, "summary": nil},
-		Store:             false,
+		Store:             e.store,
 		Temperature:       1,
 		Text:              map[string]any{"format": map[string]any{"type": "text"}},
 		ToolChoice:        "auto",
