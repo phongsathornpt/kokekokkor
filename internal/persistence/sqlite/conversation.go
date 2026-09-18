@@ -35,9 +35,9 @@ func (s *Store) LoadConversation(ctx context.Context, id string) (responsestate.
 		return responsestate.Conversation{}, fmt.Errorf("decode conversation %q messages: %w", id, err)
 	}
 	return responsestate.Conversation{
-		ID:        id,
-		CreatedAt: time.Unix(createdUnix, 0),
-		Metadata:  metadata,
+		ID:          id,
+		CreatedAt:   time.Unix(createdUnix, 0),
+		Metadata:    metadata,
 		Messages:    messages,
 		Continuable: continuable != 0,
 	}, nil
