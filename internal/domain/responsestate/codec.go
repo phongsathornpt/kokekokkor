@@ -14,17 +14,17 @@ type messageWire struct {
 }
 
 type blockWire struct {
-	Type       string          `json:"type"`
-	Text       string          `json:"text,omitempty"`
+	Type       string            `json:"type"`
+	Text       string            `json:"text,omitempty"`
 	Citations  []llm.URLCitation `json:"citations,omitempty"`
-	Source     *llm.MediaSource `json:"source,omitempty"`
-	Name       string          `json:"name,omitempty"`
-	Context    string          `json:"context,omitempty"`
-	ID         string          `json:"id,omitempty"`
-	Arguments  json.RawMessage `json:"arguments,omitempty"`
-	ToolCallID string          `json:"tool_call_id,omitempty"`
-	Content    []blockWire     `json:"content,omitempty"`
-	IsError    bool            `json:"is_error,omitempty"`
+	Source     *llm.MediaSource  `json:"source,omitempty"`
+	Name       string            `json:"name,omitempty"`
+	Context    string            `json:"context,omitempty"`
+	ID         string            `json:"id,omitempty"`
+	Arguments  json.RawMessage   `json:"arguments,omitempty"`
+	ToolCallID string            `json:"tool_call_id,omitempty"`
+	Content    []blockWire       `json:"content,omitempty"`
+	IsError    bool              `json:"is_error,omitempty"`
 }
 
 func MarshalMessages(messages []llm.Message) ([]byte, error) {
