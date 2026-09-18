@@ -94,10 +94,20 @@ func encodeResponsesOutput(response llm.Response) ([]responseOutputItem, string,
 				})
 				continue
 			}
+			annotations := make([]any, 0, len(value.Citations))
+			for _, citation := range value.Citations {
+				annotations = append(annotations, responseURLCitation{
+					Type:       "url_citation",
+					StartIndex: citation.StartIndex,
+					EndIndex:   citation.EndIndex,
+					URL:        citation.URL,
+					Title:      citation.Title,
+				})
+			}
 			textParts = append(textParts, responseOutputPart{
 				Type:        "output_text",
 				Text:        value.Text,
-				Annotations: []any{},
+				Annotations: annotations,
 			})
 			allText = append(allText, value.Text)
 
