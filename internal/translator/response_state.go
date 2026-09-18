@@ -163,7 +163,6 @@ func cloneStateMessages(messages []llm.Message) []llm.Message {
 	return result
 }
 
-
 func (s *memoryResponseStateStore) LoadConversation(_ context.Context, id string) (responsestate.Conversation, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
