@@ -272,10 +272,23 @@ func decodeResponsesContent(raw json.RawMessage) ([]llm.ContentBlock, error) {
 			}
 			blocks = append(blocks, llm.ImageBlock{Source: decodeImageURL(part.ImageURL)})
 		case "input_file":
-			if part.FileID == "" {
-				return nil, fmt.Errorf("input_file translation currently requires file_id")
+			switch {
+			case part.FileData != "":
+				mediaType, data, ok := parseDataURL(part.FileData)
+				if !ok {
+					return nil, fmt.Errorf("input_file file_data must be a base64 data URL")
+				}
+				blocks = append(blocks, llm.DocumentBlock{
+					Source: llm.MediaSource{Type: llm.MediaSourceBase64, MediaType: mediaType, Data: data},
+					Name:   part.Filename,
+				})
+			case part.FileID != "":
+				blocks = append(blocks, llm.DocumentBlock{Source: llm.MediaSource{Type: llm.MediaSourceFile, FileID: part.FileID}, Name: part.Filename})
+			case part.FileURL != "":
+				blocks = append(blocks, llm.DocumentBlock{Source: llm.MediaSource{Type: llm.MediaSourceURL, URL: part.FileURL}, Name: part.Filename})
+			default:
+				return nil, fmt.Errorf("input_file requires file_data, file_id, or file_url")
 			}
-			blocks = append(blocks, llm.DocumentBlock{Source: llm.MediaSource{Type: llm.MediaSourceFile, FileID: part.FileID}})
 		default:
 			return nil, fmt.Errorf("unsupported Responses content part %q", part.Type)
 		}
