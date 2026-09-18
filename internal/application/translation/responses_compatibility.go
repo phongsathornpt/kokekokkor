@@ -1,13 +1,37 @@
 package translation
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 )
 
 func ResponsesToAnthropicRequest(request llm.Request) (llm.Request, error) {
+	metadata := cloneMetadata(request.Metadata)
+	if err := consumeResponsesStatelessFlags(metadata); err != nil {
+		return llm.Request{}, err
+	}
+	request.Metadata = metadata
 	return OpenAIToAnthropicRequest(request)
+}
+
+func consumeResponsesStatelessFlags(metadata map[string]json.RawMessage) error {
+	for _, key := range []string{"store", "background"} {
+		raw, ok := metadata[key]
+		if !ok {
+			continue
+		}
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			return unsupported(key, key+" must be a boolean")
+		}
+		if enabled {
+			return unsupported(key, "translated Responses requests cannot preserve provider-hosted state")
+		}
+		delete(metadata, key)
+	}
+	return nil
 }
 
 func AnthropicToResponsesResponse(response llm.Response) (llm.Response, error) {
