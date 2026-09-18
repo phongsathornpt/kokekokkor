@@ -8,6 +8,11 @@ import (
 )
 
 func ResponsesToAnthropicRequest(request llm.Request) (llm.Request, error) {
+	for _, tool := range request.Tools {
+		if tool.Kind == llm.ToolKindWebSearch {
+			return llm.Request{}, unsupported("web_search", "Anthropic target mapping is not implemented")
+		}
+	}
 	metadata := cloneMetadata(request.Metadata)
 	if err := consumeResponsesStatelessFlags(metadata); err != nil {
 		return llm.Request{}, err
