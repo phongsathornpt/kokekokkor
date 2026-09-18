@@ -45,12 +45,33 @@ func (r *Runtime) OpenAIResponsesToAnthropicStream(ctx context.Context, target p
 
 	translated := translateStream(response.Body, func(source io.Reader, sink io.Writer) error {
 		encoder := openaiProtocol.NewResponsesStreamEncoder(sink, options.IncludeObfuscation)
-		return anthropicProtocol.DecodeMessagesStream(source, func(event llm.StreamEvent) error {
-			if err := apptranslation.AnthropicToResponsesStreamEvent(event); err != nil {
+		if !options.BufferRefusals {
+			return anthropicProtocol.DecodeMessagesStream(source, func(event llm.StreamEvent) error {
+				if err := apptranslation.AnthropicToResponsesStreamEvent(event); err != nil {
+					return err
+				}
+				return encoder.Encode(event)
+			})
+		}
+		var events []llm.StreamEvent
+		if err := anthropicProtocol.DecodeMessagesStream(source, func(event llm.StreamEvent) error {
+			if err := apptranslation.AnthropicToResponsesBufferedStreamEvent(event); err != nil {
 				return err
 			}
-			return encoder.Encode(event)
-		})
+			events = append(events, event)
+			return nil
+		}); err != nil {
+			return err
+		}
+		if bufferedResponsesRefusal(events) {
+			encoder.SetRefusalMode(true)
+		}
+		for _, event := range events {
+			if err := encoder.Encode(event); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	primed, err := primeStream(translated)
 	if err != nil {

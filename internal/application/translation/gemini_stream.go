@@ -60,11 +60,19 @@ func GeminiToOpenAIStreamEvent(event llm.StreamEvent) error {
 }
 
 func GeminiToResponsesStreamEvent(event llm.StreamEvent) error {
+	return geminiToResponsesStreamEvent(event, false)
+}
+
+func GeminiToResponsesBufferedStreamEvent(event llm.StreamEvent) error {
+	return geminiToResponsesStreamEvent(event, true)
+}
+
+func geminiToResponsesStreamEvent(event llm.StreamEvent, allowRefusal bool) error {
 	if err := validateGeminiStreamEvent(event, true, true); err != nil {
 		return err
 	}
-	if event.Type == llm.StreamEventResponseStop && event.StopReason == llm.StopReasonContentBlock {
-		return unsupported("refusal", "Gemini safety/content-block stops are not mapped to Responses refusal events yet")
+	if event.Type == llm.StreamEventResponseStop && event.StopReason == llm.StopReasonContentBlock && !allowRefusal {
+		return unsupported("refusal", "Gemini safety/content-block stop requires stream_options.buffer_refusals=true")
 	}
 	return nil
 }
