@@ -52,7 +52,7 @@ type geminiTool struct {
 	GoogleSearch         *geminiGoogleSearch          `json:"googleSearch,omitempty"`
 }
 
-type geminiGoogleSearch struct {}
+type geminiGoogleSearch struct{}
 
 type geminiFunctionDeclaration struct {
 	Name        string          `json:"name"`
