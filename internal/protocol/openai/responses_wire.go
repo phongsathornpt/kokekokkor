@@ -3,16 +3,16 @@ package openai
 import "encoding/json"
 
 type responsesRequest struct {
-	Model             string                   `json:"model"`
-	Instructions      json.RawMessage          `json:"instructions,omitempty"`
-	Input             json.RawMessage          `json:"input,omitempty"`
-	Tools             []responseTool           `json:"tools,omitempty"`
-	ToolChoice        json.RawMessage          `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool                    `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens   *int                     `json:"max_output_tokens,omitempty"`
-	Temperature       *float64                 `json:"temperature,omitempty"`
-	TopP              *float64                 `json:"top_p,omitempty"`
-	Reasoning         *responseReasoningConfig `json:"reasoning,omitempty"`
+	Model              string                   `json:"model"`
+	Instructions       json.RawMessage          `json:"instructions,omitempty"`
+	Input              json.RawMessage          `json:"input,omitempty"`
+	Tools              []responseTool           `json:"tools,omitempty"`
+	ToolChoice         json.RawMessage          `json:"tool_choice,omitempty"`
+	ParallelToolCalls  *bool                    `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens    *int                     `json:"max_output_tokens,omitempty"`
+	Temperature        *float64                 `json:"temperature,omitempty"`
+	TopP               *float64                 `json:"top_p,omitempty"`
+	Reasoning          *responseReasoningConfig `json:"reasoning,omitempty"`
 	Text               json.RawMessage          `json:"text,omitempty"`
 	PreviousResponseID string                   `json:"previous_response_id,omitempty"`
 	Conversation       json.RawMessage          `json:"conversation,omitempty"`
@@ -58,18 +58,18 @@ type responseTool struct {
 }
 
 type responseObject struct {
-	ID                string               `json:"id"`
-	Object            string               `json:"object"`
-	CreatedAt         int64                `json:"created_at"`
-	CompletedAt       int64                `json:"completed_at,omitempty"`
-	Status            string               `json:"status"`
-	Error             any                  `json:"error"`
-	IncompleteDetails any                  `json:"incomplete_details"`
+	ID                 string               `json:"id"`
+	Object             string               `json:"object"`
+	CreatedAt          int64                `json:"created_at"`
+	CompletedAt        int64                `json:"completed_at,omitempty"`
+	Status             string               `json:"status"`
+	Error              any                  `json:"error"`
+	IncompleteDetails  any                  `json:"incomplete_details"`
 	Model              string               `json:"model"`
 	PreviousResponseID string               `json:"previous_response_id,omitempty"`
 	Output             []responseOutputItem `json:"output"`
-	OutputText        string               `json:"output_text,omitempty"`
-	Usage             responseUsage        `json:"usage"`
+	OutputText         string               `json:"output_text,omitempty"`
+	Usage              responseUsage        `json:"usage"`
 }
 
 type responseWebSearchAction struct {
