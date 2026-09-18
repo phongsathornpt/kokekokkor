@@ -15,10 +15,11 @@ func (s *Store) LoadConversation(ctx context.Context, id string) (responsestate.
 	var createdUnix int64
 	var metadataJSON []byte
 	var messagesJSON []byte
+	var continuable int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT created_at, metadata, messages FROM conversations WHERE id = ?`,
+		`SELECT created_at, metadata, messages, continuable FROM conversations WHERE id = ?`,
 		id,
-	).Scan(&createdUnix, &metadataJSON, &messagesJSON)
+	).Scan(&createdUnix, &metadataJSON, &messagesJSON, &continuable)
 	if errors.Is(err, sql.ErrNoRows) {
 		return responsestate.Conversation{}, responsestate.ErrNotFound
 	}
@@ -37,7 +38,8 @@ func (s *Store) LoadConversation(ctx context.Context, id string) (responsestate.
 		ID:        id,
 		CreatedAt: time.Unix(createdUnix, 0),
 		Metadata:  metadata,
-		Messages:  messages,
+		Messages:    messages,
+		Continuable: continuable != 0,
 	}, nil
 }
 
@@ -56,13 +58,18 @@ func (s *Store) SaveConversation(ctx context.Context, conversation responsestate
 	if err != nil {
 		return fmt.Errorf("encode conversation %q messages: %w", conversation.ID, err)
 	}
+	continuable := 0
+	if conversation.Continuable {
+		continuable = 1
+	}
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO conversations(id, created_at, metadata, messages)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO conversations(id, created_at, metadata, messages, continuable)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			metadata = excluded.metadata,
-			messages = excluded.messages
-	`, conversation.ID, conversation.CreatedAt.Unix(), metadata, messages); err != nil {
+			messages = excluded.messages,
+			continuable = excluded.continuable
+	`, conversation.ID, conversation.CreatedAt.Unix(), metadata, messages, continuable); err != nil {
 		return fmt.Errorf("save conversation %q: %w", conversation.ID, err)
 	}
 	return nil
