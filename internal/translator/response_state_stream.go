@@ -19,6 +19,9 @@ type responseStateStreamTool struct {
 
 type responseStateStreamAccumulator struct {
 	responseID  string
+	model       string
+	usage       llm.Usage
+	stopReason  llm.StopReason
 	text        map[int]*strings.Builder
 	tools       map[int]*responseStateStreamTool
 	nonportable bool
@@ -35,6 +38,7 @@ func (a *responseStateStreamAccumulator) Observe(event llm.StreamEvent) error {
 	switch event.Type {
 	case llm.StreamEventResponseStart:
 		a.responseID = event.ResponseID
+		a.model = event.Model
 	case llm.StreamEventContentStart:
 		switch block := event.Block.(type) {
 		case llm.TextBlock:
@@ -68,6 +72,12 @@ func (a *responseStateStreamAccumulator) Observe(event llm.StreamEvent) error {
 			return fmt.Errorf("response state tool delta for unopened block %d", event.Index)
 		}
 		tool.arguments.WriteString(event.ToolCallDelta.ArgumentsDelta)
+	case llm.StreamEventUsage:
+		if event.Usage != nil {
+			a.usage = *event.Usage
+		}
+	case llm.StreamEventResponseStop:
+		a.stopReason = event.StopReason
 	case llm.StreamEventReasoningDelta:
 		a.nonportable = true
 	}
@@ -75,7 +85,7 @@ func (a *responseStateStreamAccumulator) Observe(event llm.StreamEvent) error {
 }
 
 func (a *responseStateStreamAccumulator) Persist(ctx context.Context, runtime *Runtime, plan responseStatePlan) error {
-	if plan.state == nil || !plan.state.Store {
+	if plan.state == nil {
 		return nil
 	}
 	if a.responseID == "" {
@@ -120,8 +130,16 @@ func (a *responseStateStreamAccumulator) Persist(ctx context.Context, runtime *R
 	if a.nonportable {
 		content = append(content, llm.ReasoningBlock{})
 	}
+	if a.stopReason == "" {
+		return fmt.Errorf("streamed response state is missing stop reason")
+	}
 	return runtime.persistResponsesState(ctx, plan, llm.Response{
-		ID:      a.responseID,
-		Content: content,
+		ID:                 a.responseID,
+		PreviousResponseID: plan.state.PreviousResponseID,
+		ConversationID:     plan.state.ConversationID,
+		Model:              a.model,
+		Content:            content,
+		StopReason:         a.stopReason,
+		Usage:              a.usage,
 	})
 }
