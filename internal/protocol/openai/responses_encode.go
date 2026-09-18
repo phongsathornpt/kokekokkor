@@ -26,6 +26,7 @@ func EncodeResponsesResponse(response llm.Response) ([]byte, error) {
 		return nil, err
 	}
 	now := time.Now().Unix()
+	response.ID = NormalizeResponsesID(response.ID)
 	var conversation *responseConversation
 	if response.ConversationID != "" {
 		conversation = &responseConversation{ID: response.ConversationID}
