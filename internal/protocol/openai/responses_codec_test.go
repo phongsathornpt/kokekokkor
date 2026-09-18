@@ -48,6 +48,39 @@ func TestDecodeResponsesRequestPortableItems(t *testing.T) {
 	}
 }
 
+func TestDecodeResponsesRequestState(t *testing.T) {
+	store := true
+	_ = store
+	request, err := DecodeResponsesRequest([]byte(`{
+		"model":"portable",
+		"instructions":"new instructions",
+		"input":"follow up",
+		"previous_response_id":"resp_1",
+		"store":true
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeResponsesRequest() error = %v", err)
+	}
+	if request.ResponseState == nil || request.ResponseState.PreviousResponseID != "resp_1" || !request.ResponseState.Store || request.ResponseState.InstructionMessages != 1 {
+		t.Fatalf("response state = %#v", request.ResponseState)
+	}
+	if _, ok := request.Metadata["store"]; ok {
+		t.Fatalf("store leaked into metadata: %#v", request.Metadata)
+	}
+}
+
+func TestDecodeResponsesRequestRejectsMixedState(t *testing.T) {
+	_, err := DecodeResponsesRequest([]byte(`{
+		"model":"portable",
+		"input":"follow up",
+		"previous_response_id":"resp_1",
+		"conversation":"conv_1"
+	}`))
+	if err == nil {
+		t.Fatal("DecodeResponsesRequest() error = nil, want mutually-exclusive state error")
+	}
+}
+
 func TestDecodeResponsesRequestInlineFile(t *testing.T) {
 	request, err := DecodeResponsesRequest([]byte(`{
 		"model":"portable",
