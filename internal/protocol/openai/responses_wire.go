@@ -40,6 +40,9 @@ type responseContentPart struct {
 	Text     string `json:"text,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
 	FileID   string `json:"file_id,omitempty"`
+	FileData string `json:"file_data,omitempty"`
+	FileURL  string `json:"file_url,omitempty"`
+	Filename string `json:"filename,omitempty"`
 	Detail   string `json:"detail,omitempty"`
 }
 
