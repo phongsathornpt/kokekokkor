@@ -15,6 +15,7 @@ type responsesStreamSnapshot struct {
 	OutputText         string               `json:"output_text,omitempty"`
 	ParallelToolCalls  bool                 `json:"parallel_tool_calls"`
 	PreviousResponseID any                  `json:"previous_response_id"`
+	Conversation       *responseConversation `json:"conversation,omitempty"`
 	Prompt             any                  `json:"prompt"`
 	Reasoning          map[string]any       `json:"reasoning"`
 	SafetyIdentifier   any                  `json:"safety_identifier"`
