@@ -53,16 +53,16 @@ func (r *Runtime) OpenAIResponsesToAnthropicStream(ctx context.Context, target p
 				return encoder.Encode(event)
 			})
 		}
-		var events []llm.StreamEvent
+		var buffer responsesEventBuffer
 		if err := anthropicProtocol.DecodeMessagesStream(source, func(event llm.StreamEvent) error {
 			if err := apptranslation.AnthropicToResponsesBufferedStreamEvent(event); err != nil {
 				return err
 			}
-			events = append(events, event)
-			return nil
+			return buffer.Append(event)
 		}); err != nil {
 			return err
 		}
+		events := buffer.Events()
 		if bufferedResponsesRefusal(events) {
 			encoder.SetRefusalMode(true)
 		}

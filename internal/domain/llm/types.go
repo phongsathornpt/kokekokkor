@@ -105,7 +105,15 @@ type Message struct {
 	Metadata map[string]json.RawMessage
 }
 
+type ToolKind string
+
+const (
+	ToolKindFunction  ToolKind = "function"
+	ToolKindWebSearch ToolKind = "web_search"
+)
+
 type Tool struct {
+	Kind        ToolKind
 	Name        string
 	Description string
 	InputSchema json.RawMessage

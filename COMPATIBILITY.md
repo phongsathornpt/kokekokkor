@@ -31,6 +31,8 @@ The canonical layer currently preserves the portable subset shared by the partic
 - buffered refusal/content-block output into OpenAI Responses refusal parts
 - opt-in streamed refusal fidelity for translated OpenAI Responses via `stream_options.buffer_refusals`
 - provider stream failures into OpenAI Responses `response.failed` when a portable code/message exists
+- buffered OpenAI Responses bare `web_search` requests into Gemini Google Search grounding
+- Gemini grounded-search queries into OpenAI Responses `web_search_call` items and grounded URLs into `url_citation` annotations when the returned grounding metadata fits the portable subset
 
 ### OpenAI Realtime -> Gemini Live
 
@@ -49,7 +51,10 @@ The bridge establishes Gemini Live before upgrading the downstream OpenAI Realti
 
 The following are intentionally rejected instead of being silently flattened or guessed:
 
-- Responses built-in tools whose execution semantics do not have an exact target-protocol equivalent
+- Responses built-in tools whose execution semantics do not have an exact target-protocol equivalent; the only cross-protocol built-in tool currently modeled is bare `web_search` -> Gemini Google Search
+- translated streaming `web_search` to Gemini; search-call and citation metadata are currently preserved only on buffered responses
+- OpenAI `web_search` options such as provider-specific location/domain/context controls that do not have an exact Gemini equivalent
+- Gemini grounding UI payloads such as `searchEntryPoint`, which have no exact OpenAI Responses representation
 - persisted conversation, background execution, and other provider-hosted state controls across protocols
 - arbitrary provider extension metadata without an explicit mapping
 - provider-local reasoning signatures, encrypted/redacted thinking continuation state, or equivalent opaque continuation material
@@ -72,6 +77,8 @@ Anthropic/Gemini may reveal refusal or safety stop reasons only after ordinary t
 
 Clients that require exact OpenAI refusal events can set `stream_options.buffer_refusals=true`. The gateway then buffers the complete upstream stream, inspects the terminal stop reason, and emits either normal output-text events or `response.refusal.delta` / `response.refusal.done` events. This preserves semantics at the cost of streaming latency.
 
+Exact-refusal buffering is bounded to 8 MiB or 8,192 canonical events per response, whichever limit is reached first. Oversized buffered streams fail explicitly instead of growing memory without bound.
+
 ## Failure and fallback policy
 
 Compatibility errors detected before the upstream call may advance to the next configured route target. Transport failures and retryable pre-commit statuses may also fall through. Once native or translated bytes have been committed downstream, the selected route is final; kokekokkor does not replay a generation after partial delivery.
@@ -88,3 +95,8 @@ go build ./...
 ```
 
 The application translation package also contains a table-driven portable request matrix covering every currently implemented cross-protocol request direction.
+
+
+## Completion boundary
+
+The compatibility surface is considered complete when every cross-protocol feature is either mapped losslessly or rejected explicitly. Provider-hosted persistence, background execution, provider-local file identifiers, remote-media fetching, provider UI payloads, and Realtime controls without an exact peer-protocol operation are terminal compatibility boundaries rather than implicit implementation promises. Native passthrough remains the fidelity path for those features.

@@ -48,15 +48,30 @@ func TestDecodeResponsesRequestPortableItems(t *testing.T) {
 	}
 }
 
-func TestDecodeResponsesRequestRejectsBuiltInTool(t *testing.T) {
-	_, err := DecodeResponsesRequest([]byte(`{
+func TestDecodeResponsesRequestWebSearch(t *testing.T) {
+	request, err := DecodeResponsesRequest([]byte(`{
 		"model":"portable",
 		"input":"hello",
 		"tools":[{"type":"web_search"}],
 		"max_output_tokens":32
 	}`))
+	if err != nil {
+		t.Fatalf("DecodeResponsesRequest() error = %v", err)
+	}
+	if len(request.Tools) != 1 || request.Tools[0].Kind != llm.ToolKindWebSearch {
+		t.Fatalf("tools = %#v", request.Tools)
+	}
+}
+
+func TestDecodeResponsesRequestRejectsWebSearchOptions(t *testing.T) {
+	_, err := DecodeResponsesRequest([]byte(`{
+		"model":"portable",
+		"input":"hello",
+		"tools":[{"type":"web_search","search_context_size":"low"}],
+		"max_output_tokens":32
+	}`))
 	if err == nil {
-		t.Fatal("DecodeResponsesRequest() error = nil, want unsupported tool error")
+		t.Fatal("DecodeResponsesRequest() error = nil, want unsupported options error")
 	}
 }
 

@@ -75,6 +75,11 @@ func GeminiToOpenAIRequest(request llm.Request) (llm.Request, error) {
 	if err := rejectNestedMetadata(request); err != nil {
 		return llm.Request{}, err
 	}
+	for _, tool := range request.Tools {
+		if tool.Kind == llm.ToolKindWebSearch {
+			return llm.Request{}, unsupported("web search", "target protocol cannot preserve Gemini Google Search tool semantics")
+		}
+	}
 	for _, message := range request.Messages {
 		for _, block := range message.Content {
 			switch value := block.(type) {
