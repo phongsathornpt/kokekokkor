@@ -8,20 +8,21 @@ import (
 	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
 	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/domain/responsestate"
 	anthropicProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/anthropic"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
 )
 
 type Runtime struct {
 	client        upstream.Client
-	responseState ResponseStateStore
+	responseState responsestate.Store
 }
 
 func New(client upstream.Client) *Runtime {
 	return NewWithResponseStateStore(client, newMemoryResponseStateStore())
 }
 
-func NewWithResponseStateStore(client upstream.Client, responseState ResponseStateStore) *Runtime {
+func NewWithResponseStateStore(client upstream.Client, responseState responsestate.Store) *Runtime {
 	if responseState == nil {
 		responseState = newMemoryResponseStateStore()
 	}
