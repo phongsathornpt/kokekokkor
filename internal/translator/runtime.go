@@ -16,6 +16,8 @@ import (
 type Runtime struct {
 	client        upstream.Client
 	responseState responsestate.Store
+	backgroundMu  sync.Mutex
+	background    map[string]context.CancelFunc
 }
 
 func New(client upstream.Client) *Runtime {
@@ -26,7 +28,11 @@ func NewWithResponseStateStore(client upstream.Client, responseState responsesta
 	if responseState == nil {
 		responseState = newMemoryResponseStateStore()
 	}
-	return &Runtime{client: client, responseState: responseState}
+	return &Runtime{
+		client:        client,
+		responseState: responseState,
+		background:    make(map[string]context.CancelFunc),
+	}
 }
 
 func (r *Runtime) OpenAIChatToAnthropic(ctx context.Context, target provider.Target, model string, header http.Header, body []byte) (upstream.Response, error) {
