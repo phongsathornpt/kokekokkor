@@ -65,8 +65,9 @@ type responseObject struct {
 	Status            string               `json:"status"`
 	Error             any                  `json:"error"`
 	IncompleteDetails any                  `json:"incomplete_details"`
-	Model             string               `json:"model"`
-	Output            []responseOutputItem `json:"output"`
+	Model              string               `json:"model"`
+	PreviousResponseID string               `json:"previous_response_id,omitempty"`
+	Output             []responseOutputItem `json:"output"`
 	OutputText        string               `json:"output_text,omitempty"`
 	Usage             responseUsage        `json:"usage"`
 }
