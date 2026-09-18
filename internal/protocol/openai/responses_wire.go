@@ -17,6 +17,7 @@ type responsesRequest struct {
 	PreviousResponseID string                   `json:"previous_response_id,omitempty"`
 	Conversation       json.RawMessage          `json:"conversation,omitempty"`
 	Store              *bool                    `json:"store,omitempty"`
+	Background         *bool                    `json:"background,omitempty"`
 	Stream             bool                     `json:"stream,omitempty"`
 }
 
