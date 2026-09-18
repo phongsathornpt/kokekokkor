@@ -146,13 +146,14 @@ func applyGeminiGrounding(content []llm.ContentBlock, raw json.RawMessage) ([]ll
 		return nil, false, fmt.Errorf("decode Gemini groundingMetadata: %w", err)
 	}
 	for key := range object {
-		if key != "groundingChunks" && key != "groundingSupports" {
+		if key != "groundingChunks" && key != "groundingSupports" && key != "webSearchQueries" {
 			return content, false, nil
 		}
 	}
 
 	var grounding struct {
-		Chunks []struct {
+		WebSearchQueries []string `json:"webSearchQueries"`
+		Chunks           []struct {
 			Web *struct {
 				URI   string `json:"uri"`
 				Title string `json:"title"`
@@ -201,6 +202,11 @@ func applyGeminiGrounding(content []llm.ContentBlock, raw json.RawMessage) ([]ll
 			})
 		}
 		out[support.Segment.PartIndex] = text
+	}
+	if len(grounding.WebSearchQueries) != 0 {
+		out = append([]llm.ContentBlock{llm.WebSearchCallBlock{
+			Queries: append([]string(nil), grounding.WebSearchQueries...),
+		}}, out...)
 	}
 	return out, true, nil
 }
