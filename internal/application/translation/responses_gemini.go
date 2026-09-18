@@ -22,6 +22,18 @@ func ResponsesToGeminiRequest(request llm.Request) (llm.Request, error) {
 		return llm.Request{}, err
 	}
 	request.Reasoning = reasoning
+	hasWebSearch := false
+	for _, tool := range request.Tools {
+		if tool.Kind == llm.ToolKindWebSearch {
+			hasWebSearch = true
+		}
+	}
+	if hasWebSearch && request.ToolChoice != nil {
+		if request.ToolChoice.Mode != llm.ToolChoiceAuto || request.ToolChoice.DisableParallel {
+			return llm.Request{}, unsupported("tool_choice", "Gemini Google Search cannot preserve forced, disabled, named, or parallel web-search selection")
+		}
+		request.ToolChoice = nil
+	}
 	if request.ToolChoice != nil && request.ToolChoice.DisableParallel {
 		return llm.Request{}, unsupported("parallel_tool_calls", "Gemini parallel-tool policy translation is not implemented")
 	}
