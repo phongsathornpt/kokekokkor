@@ -20,6 +20,7 @@ kokekokkor currently includes:
 - tool calls/results, parallel-tool policy where representable, portable documents, and tool-error mapping where representable
 - reasoning effort controls and provider reasoning summaries into OpenAI Responses
 - buffered refusal/content-block output mapped to OpenAI Responses refusal parts
+- opt-in exact streamed refusal mapping via `stream_options.buffer_refusals`
 - canonical stream failures mapped to OpenAI Responses `response.failed`
 - OpenAI-compatible Realtime WebSocket passthrough with routing, aliases, auth replacement, and fallback before upgrade
 - translated OpenAI Realtime -> Gemini Live sessions for portable text, function tools, and raw PCM16 audio
