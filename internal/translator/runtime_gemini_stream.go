@@ -101,7 +101,7 @@ func (r *Runtime) OpenAIResponsesToGeminiStream(ctx context.Context, target prov
 	translated := translateStream(response.Body, func(source io.Reader, sink io.Writer) error {
 		encoder := openaiProtocol.NewResponsesStreamEncoder(sink, options.IncludeObfuscation)
 		if statePlan.state != nil {
-			encoder.SetState(statePlan.state.PreviousResponseID, statePlan.state.Store)
+			encoder.SetState(statePlan.state.PreviousResponseID, statePlan.state.ConversationID, statePlan.state.Store)
 		}
 		stateAccumulator := newResponseStateStreamAccumulator()
 		if !options.BufferRefusals {
