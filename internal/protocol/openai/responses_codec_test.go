@@ -49,8 +49,6 @@ func TestDecodeResponsesRequestPortableItems(t *testing.T) {
 }
 
 func TestDecodeResponsesRequestState(t *testing.T) {
-	store := true
-	_ = store
 	request, err := DecodeResponsesRequest([]byte(`{
 		"model":"portable",
 		"instructions":"new instructions",
