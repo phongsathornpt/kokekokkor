@@ -40,6 +40,22 @@ func NewHandlerWithRealtime(router routing.Router, forwarder Forwarder, realtime
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/responses/") {
+		if manager, ok := h.translator.(StoredResponseManager); ok {
+			status, payload, handled, err := manager.HandleStoredResponse(r.Context(), r.Method, r.URL.Path)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
+			if handled {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_, _ = w.Write(payload)
+				return
+			}
+		}
+	}
+
 	if strings.HasPrefix(r.URL.Path, "/v1/conversations") {
 		if manager, ok := h.translator.(ConversationManager); ok {
 			body, err := replayBody(r)
