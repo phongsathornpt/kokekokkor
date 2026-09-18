@@ -9,6 +9,7 @@ import (
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/responsestate"
+	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
 )
 
 type memoryResponseStateStore struct {
@@ -35,6 +36,7 @@ func (s *memoryResponseStateStore) LoadResponse(_ context.Context, id string) (r
 		return responsestate.Record{}, responsestate.ErrNotFound
 	}
 	record.Messages = cloneStateMessages(record.Messages)
+	record.Payload = append([]byte(nil), record.Payload...)
 	return record, nil
 }
 
@@ -43,6 +45,7 @@ func (s *memoryResponseStateStore) SaveResponse(_ context.Context, id string, re
 		return fmt.Errorf("response state id must not be empty")
 	}
 	record.Messages = cloneStateMessages(record.Messages)
+	record.Payload = append([]byte(nil), record.Payload...)
 	if record.ExpiresAt.IsZero() {
 		record.ExpiresAt = time.Now().Add(responsestate.DefaultRetention)
 	}
@@ -131,9 +134,19 @@ func (r *Runtime) persistResponsesState(ctx context.Context, plan responseStateP
 	if !plan.state.Store {
 		return nil
 	}
+	payload, err := openaiProtocol.EncodeResponsesResponse(response)
+	if err != nil {
+		return err
+	}
+	status := "completed"
+	if response.StopReason == llm.StopReasonMaxTokens {
+		status = "incomplete"
+	}
 	return r.responseState.SaveResponse(ctx, response.ID, responsestate.Record{
 		Messages:    history,
 		Continuable: continuable,
+		Payload:     payload,
+		Status:      status,
 		ExpiresAt:   time.Now().Add(responsestate.DefaultRetention),
 	})
 }
