@@ -152,9 +152,9 @@ type ResponseFormat struct {
 }
 
 type ResponseState struct {
-	PreviousResponseID string
-	ConversationID     string
-	Store              bool
+	PreviousResponseID  string
+	ConversationID      string
+	Store               bool
 	InstructionMessages int
 }
 
@@ -197,10 +197,10 @@ type Response struct {
 	ID                 string
 	PreviousResponseID string
 	ConversationID     string
-	Model        string
-	Content      []ContentBlock
-	StopReason   StopReason
-	StopSequence string
-	Usage        Usage
-	Metadata     map[string]json.RawMessage
+	Model              string
+	Content            []ContentBlock
+	StopReason         StopReason
+	StopSequence       string
+	Usage              Usage
+	Metadata           map[string]json.RawMessage
 }
