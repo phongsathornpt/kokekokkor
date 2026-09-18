@@ -87,6 +87,12 @@ func (s *Store) migrate(ctx context.Context) error {
 			expires_at INTEGER NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS response_states_expires_idx ON response_states(expires_at)`,
+		`CREATE TABLE IF NOT EXISTS conversations (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			metadata BLOB NOT NULL,
+			messages BLOB NOT NULL
+		)`,
 		`INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)`,
 	}
 	for _, statement := range statements {
