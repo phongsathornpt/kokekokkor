@@ -66,6 +66,39 @@ func TestGenerateContentRequestRoundTripPortableSemantics(t *testing.T) {
 	}
 }
 
+func TestGenerateContentRequestRoundTripWebSearch(t *testing.T) {
+	request := llm.Request{
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "latest?"}},
+		}},
+		Tools: []llm.Tool{{Kind: llm.ToolKindWebSearch}},
+	}
+	encoded, err := EncodeGenerateContentRequest(request)
+	if err != nil {
+		t.Fatalf("EncodeGenerateContentRequest() error = %v", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatalf("decode encoded request: %v", err)
+	}
+	tools, ok := wire["tools"].([]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("tools = %#v", wire["tools"])
+	}
+	tool, ok := tools[0].(map[string]any)
+	if !ok || tool["googleSearch"] == nil {
+		t.Fatalf("tool = %#v", tools[0])
+	}
+	decoded, err := DecodeGenerateContentRequest(encoded)
+	if err != nil {
+		t.Fatalf("DecodeGenerateContentRequest() error = %v", err)
+	}
+	if len(decoded.Tools) != 1 || decoded.Tools[0].Kind != llm.ToolKindWebSearch {
+		t.Fatalf("decoded tools = %#v", decoded.Tools)
+	}
+}
+
 func TestDecodeGenerateContentResponseMapsUsageAndStop(t *testing.T) {
 	response, err := DecodeGenerateContentResponse([]byte(`{
 		"responseId":"resp_1",

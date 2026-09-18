@@ -27,13 +27,22 @@ func (r Request) Validate() error {
 
 	seenTools := make(map[string]struct{}, len(r.Tools))
 	for i, tool := range r.Tools {
-		if tool.Name == "" || len(tool.InputSchema) == 0 || !json.Valid(tool.InputSchema) {
+		switch tool.Kind {
+		case "", ToolKindFunction:
+			if tool.Name == "" || len(tool.InputSchema) == 0 || !json.Valid(tool.InputSchema) {
+				return fmt.Errorf("tool %d: %w", i, ErrInvalidTool)
+			}
+			if _, exists := seenTools[tool.Name]; exists {
+				return fmt.Errorf("tool %d: %w: %s", i, ErrDuplicateToolName, tool.Name)
+			}
+			seenTools[tool.Name] = struct{}{}
+		case ToolKindWebSearch:
+			if tool.Name != "" || tool.Description != "" || len(tool.InputSchema) != 0 {
+				return fmt.Errorf("tool %d: %w", i, ErrInvalidTool)
+			}
+		default:
 			return fmt.Errorf("tool %d: %w", i, ErrInvalidTool)
 		}
-		if _, exists := seenTools[tool.Name]; exists {
-			return fmt.Errorf("tool %d: %w: %s", i, ErrDuplicateToolName, tool.Name)
-		}
-		seenTools[tool.Name] = struct{}{}
 	}
 
 	if r.ToolChoice != nil {

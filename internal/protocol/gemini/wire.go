@@ -49,8 +49,8 @@ type geminiFunctionResponse struct {
 
 type geminiTool struct {
 	FunctionDeclarations []geminiFunctionDeclaration `json:"functionDeclarations,omitempty"`
+	GoogleSearch         json.RawMessage             `json:"googleSearch,omitempty"`
 }
-
 type geminiFunctionDeclaration struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`

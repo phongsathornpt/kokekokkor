@@ -131,3 +131,69 @@ func TestResponsesToGeminiRejectsBackgroundExecution(t *testing.T) {
 		t.Fatalf("error = %v, want ErrUnsupported", err)
 	}
 }
+
+func TestResponsesToGeminiAllowsAutoWebSearch(t *testing.T) {
+	request := llm.Request{
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "latest?"}},
+		}},
+		Tools:      []llm.Tool{{Kind: llm.ToolKindWebSearch}},
+		ToolChoice: &llm.ToolChoice{Mode: llm.ToolChoiceAuto},
+	}
+	translated, err := ResponsesToGeminiRequest(request)
+	if err != nil {
+		t.Fatalf("ResponsesToGeminiRequest() error = %v", err)
+	}
+	if translated.ToolChoice != nil {
+		t.Fatalf("tool choice = %#v, want Gemini default auto behavior", translated.ToolChoice)
+	}
+}
+
+func TestResponsesToGeminiRejectsForcedWebSearch(t *testing.T) {
+	request := llm.Request{
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "latest?"}},
+		}},
+		Tools:      []llm.Tool{{Kind: llm.ToolKindWebSearch}},
+		ToolChoice: &llm.ToolChoice{Mode: llm.ToolChoiceRequired},
+	}
+	_, err := ResponsesToGeminiRequest(request)
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("error = %v, want ErrUnsupported", err)
+	}
+}
+
+func TestResponsesToAnthropicRejectsWebSearch(t *testing.T) {
+	maxTokens := 32
+	request := llm.Request{
+		MaxOutputTokens: &maxTokens,
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "latest?"}},
+		}},
+		Tools: []llm.Tool{{Kind: llm.ToolKindWebSearch}},
+	}
+	_, err := ResponsesToAnthropicRequest(request)
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("error = %v, want ErrUnsupported", err)
+	}
+}
+
+func TestResponsesToGeminiStreamRejectsWebSearch(t *testing.T) {
+	request := llm.Request{
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "latest?"}},
+		}},
+		Tools: []llm.Tool{{Kind: llm.ToolKindWebSearch}},
+		Metadata: map[string]json.RawMessage{
+			"stream": json.RawMessage("true"),
+		},
+	}
+	_, _, err := ResponsesToGeminiStreamRequest(request)
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("error = %v, want ErrUnsupported", err)
+	}
+}
