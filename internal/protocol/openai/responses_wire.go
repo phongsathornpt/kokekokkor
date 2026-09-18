@@ -65,16 +65,22 @@ type responseObject struct {
 	Usage             responseUsage        `json:"usage"`
 }
 
+type responseWebSearchAction struct {
+	Type    string   `json:"type"`
+	Queries []string `json:"queries,omitempty"`
+}
+
 type responseOutputItem struct {
-	ID        string                `json:"id"`
-	Type      string                `json:"type"`
-	Status    string                `json:"status,omitempty"`
-	Role      string                `json:"role,omitempty"`
-	Content   []responseOutputPart  `json:"content,omitempty"`
-	Summary   []responseSummaryPart `json:"summary,omitempty"`
-	CallID    string                `json:"call_id,omitempty"`
-	Name      string                `json:"name,omitempty"`
-	Arguments string                `json:"arguments,omitempty"`
+	ID        string                   `json:"id"`
+	Type      string                   `json:"type"`
+	Status    string                   `json:"status,omitempty"`
+	Role      string                   `json:"role,omitempty"`
+	Content   []responseOutputPart     `json:"content,omitempty"`
+	Summary   []responseSummaryPart    `json:"summary,omitempty"`
+	Action    *responseWebSearchAction `json:"action,omitempty"`
+	CallID    string                   `json:"call_id,omitempty"`
+	Name      string                   `json:"name,omitempty"`
+	Arguments string                   `json:"arguments,omitempty"`
 }
 
 type responseSummaryPart struct {
