@@ -57,6 +57,10 @@ type responseTool struct {
 	Strict      bool            `json:"strict,omitempty"`
 }
 
+type responseConversation struct {
+	ID string `json:"id"`
+}
+
 type responseObject struct {
 	ID                 string               `json:"id"`
 	Object             string               `json:"object"`
@@ -66,7 +70,8 @@ type responseObject struct {
 	Error              any                  `json:"error"`
 	IncompleteDetails  any                  `json:"incomplete_details"`
 	Model              string               `json:"model"`
-	PreviousResponseID string               `json:"previous_response_id,omitempty"`
+	PreviousResponseID string                `json:"previous_response_id,omitempty"`
+	Conversation       *responseConversation `json:"conversation,omitempty"`
 	Output             []responseOutputItem `json:"output"`
 	OutputText         string               `json:"output_text,omitempty"`
 	Usage              responseUsage        `json:"usage"`
