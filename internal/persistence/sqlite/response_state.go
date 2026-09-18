@@ -83,3 +83,19 @@ func (s *Store) SaveResponse(ctx context.Context, id string, record responsestat
 	}
 	return nil
 }
+
+
+func (s *Store) DeleteResponse(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM response_states WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete response state %q: %w", id, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read deleted response count: %w", err)
+	}
+	if affected == 0 {
+		return responsestate.ErrNotFound
+	}
+	return nil
+}
