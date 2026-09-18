@@ -82,7 +82,7 @@ func GeminiToResponsesResponse(response llm.Response) (llm.Response, error) {
 	}
 	for _, block := range response.Content {
 		switch block.(type) {
-		case llm.TextBlock, llm.ToolCallBlock, llm.ReasoningBlock:
+		case llm.TextBlock, llm.ToolCallBlock, llm.ReasoningBlock, llm.WebSearchCallBlock:
 		default:
 			return llm.Response{}, unsupported("response content", fmt.Sprintf("Gemini block %T cannot be represented in Responses output", block))
 		}
