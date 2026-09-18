@@ -196,6 +196,7 @@ type Usage struct {
 
 type Response struct {
 	ID                 string
+	CreatedAt          int64
 	PreviousResponseID string
 	ConversationID     string
 	Model              string
