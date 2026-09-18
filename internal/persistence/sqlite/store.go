@@ -84,6 +84,8 @@ func (s *Store) migrate(ctx context.Context) error {
 			id TEXT PRIMARY KEY,
 			messages BLOB NOT NULL,
 			continuable INTEGER NOT NULL CHECK (continuable IN (0, 1)),
+			payload BLOB NOT NULL DEFAULT X'',
+			status TEXT NOT NULL DEFAULT 'completed',
 			expires_at INTEGER NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS response_states_expires_idx ON response_states(expires_at)`,
