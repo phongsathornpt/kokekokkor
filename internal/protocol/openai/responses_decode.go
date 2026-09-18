@@ -2,6 +2,7 @@ package openai
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -277,6 +278,9 @@ func decodeResponsesContent(raw json.RawMessage) ([]llm.ContentBlock, error) {
 				mediaType, data, ok := parseDataURL(part.FileData)
 				if !ok {
 					return nil, fmt.Errorf("input_file file_data must be a base64 data URL")
+				}
+				if _, err := base64.StdEncoding.DecodeString(data); err != nil {
+					return nil, fmt.Errorf("input_file file_data contains invalid base64: %w", err)
 				}
 				blocks = append(blocks, llm.DocumentBlock{
 					Source: llm.MediaSource{Type: llm.MediaSourceBase64, MediaType: mediaType, Data: data},
