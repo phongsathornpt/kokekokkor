@@ -19,6 +19,10 @@ type ConversationManager interface {
 	HandleConversation(context.Context, string, string, []byte) (int, []byte, bool, error)
 }
 
+type StoredResponseManager interface {
+	HandleStoredResponse(context.Context, string, string) (int, []byte, bool, error)
+}
+
 type CrossProtocolTranslator interface {
 	OpenAIChatToAnthropic(context.Context, provider.Target, string, http.Header, []byte) (upstream.Response, error)
 	OpenAIChatToAnthropicStream(context.Context, provider.Target, string, http.Header, []byte) (upstream.StreamResponse, error)
