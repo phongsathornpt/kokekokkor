@@ -91,7 +91,8 @@ func (s *Store) migrate(ctx context.Context) error {
 			id TEXT PRIMARY KEY,
 			created_at INTEGER NOT NULL,
 			metadata BLOB NOT NULL,
-			messages BLOB NOT NULL
+			messages BLOB NOT NULL,
+			continuable INTEGER NOT NULL DEFAULT 1 CHECK (continuable IN (0, 1))
 		)`,
 		`INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)`,
 	}
