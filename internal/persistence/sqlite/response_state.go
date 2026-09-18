@@ -13,11 +13,13 @@ import (
 func (s *Store) LoadResponse(ctx context.Context, id string) (responsestate.Record, error) {
 	var encoded []byte
 	var continuable int
+	var payload []byte
+	var status string
 	var expiresUnix int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT messages, continuable, expires_at FROM response_states WHERE id = ?`,
+		`SELECT messages, continuable, payload, status, expires_at FROM response_states WHERE id = ?`,
 		id,
-	).Scan(&encoded, &continuable, &expiresUnix)
+	).Scan(&encoded, &continuable, &payload, &status, &expiresUnix)
 	if errors.Is(err, sql.ErrNoRows) {
 		return responsestate.Record{}, responsestate.ErrNotFound
 	}
@@ -38,6 +40,8 @@ func (s *Store) LoadResponse(ctx context.Context, id string) (responsestate.Reco
 	return responsestate.Record{
 		Messages:    messages,
 		Continuable: continuable != 0,
+		Payload:     append([]byte(nil), payload...),
+		Status:      status,
 		ExpiresAt:   expiresAt,
 	}, nil
 }
@@ -58,14 +62,20 @@ func (s *Store) SaveResponse(ctx context.Context, id string, record responsestat
 	if record.Continuable {
 		continuable = 1
 	}
+	status := record.Status
+	if status == "" {
+		status = "completed"
+	}
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO response_states(id, messages, continuable, expires_at)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO response_states(id, messages, continuable, payload, status, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			messages = excluded.messages,
 			continuable = excluded.continuable,
+			payload = excluded.payload,
+			status = excluded.status,
 			expires_at = excluded.expires_at
-	`, id, encoded, continuable, expiresAt.Unix()); err != nil {
+	`, id, encoded, continuable, record.Payload, status, expiresAt.Unix()); err != nil {
 		return fmt.Errorf("save response state %q: %w", id, err)
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM response_states WHERE expires_at <= ?`, time.Now().Unix()); err != nil {
