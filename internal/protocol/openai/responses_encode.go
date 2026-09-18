@@ -66,6 +66,7 @@ func encodeResponsesOutput(response llm.Response) ([]responseOutputItem, string,
 	var textParts []responseOutputPart
 	messageIndex := 0
 	callIndex := 0
+	searchIndex := 0
 	reasoningIndex := 0
 	isRefusal := response.StopReason == llm.StopReasonContentBlock
 
@@ -110,6 +111,19 @@ func encodeResponsesOutput(response llm.Response) ([]responseOutputItem, string,
 				Annotations: annotations,
 			})
 			allText = append(allText, value.Text)
+
+		case llm.WebSearchCallBlock:
+			flushText()
+			items = append(items, responseOutputItem{
+				ID:     fmt.Sprintf("ws_gateway_%d", searchIndex),
+				Type:   "web_search_call",
+				Status: "completed",
+				Action: &responseWebSearchAction{
+					Type:    "search",
+					Queries: append([]string(nil), value.Queries...),
+				},
+			})
+			searchIndex++
 
 		case llm.ToolCallBlock:
 			flushText()
