@@ -22,6 +22,8 @@ kokekokkor currently includes:
 - buffered refusal/content-block output mapped to OpenAI Responses refusal parts
 - opt-in exact streamed refusal mapping via `stream_options.buffer_refusals`
 - canonical stream failures mapped to OpenAI Responses `response.failed`
+- buffered bare OpenAI Responses `web_search` mapped to Gemini Google Search with portable search-call and URL-citation output
+- bounded exact-refusal buffering (8 MiB / 8,192 canonical events)
 - OpenAI-compatible Realtime WebSocket passthrough with routing, aliases, auth replacement, and fallback before upgrade
 - translated OpenAI Realtime -> Gemini Live sessions for portable text, function tools, and raw PCM16 audio
 - provider API-key auth plus OAuth/PKCE profiles with refreshable persisted credentials
@@ -30,7 +32,7 @@ kokekokkor currently includes:
 - HTMX admin UI with authenticated sessions, CSRF protection, provider CRUD, route edits, credential controls, and OAuth connect/disconnect
 - request correlation IDs, structured access logs, liveness/readiness endpoints, and graceful shutdown
 
-Unsupported cross-protocol semantics fail explicitly rather than being silently discarded.
+Unsupported cross-protocol semantics fail explicitly rather than being silently discarded. Cross-protocol support is treated as complete when a semantic is either losslessly mapped or deliberately rejected; provider-hosted state, provider-local files, provider UI payloads, and incompatible Realtime controls remain native-passthrough territory.
 
 ## Quick start
 
