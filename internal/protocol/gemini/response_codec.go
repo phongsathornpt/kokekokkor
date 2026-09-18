@@ -12,13 +12,42 @@ func DecodeGenerateContentResponse(data []byte) (llm.Response, error) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return llm.Response{}, fmt.Errorf("decode Gemini generateContent response: %w", err)
 	}
+	metadata, err := topLevelMetadata(data, "candidates", "usageMetadata", "modelVersion", "responseId")
+	if err != nil {
+		return llm.Response{}, err
+	}
+	if raw := nestedExtras(data, "usageMetadata", "promptTokenCount", "candidatesTokenCount", "cachedContentTokenCount", "thoughtsTokenCount", "totalTokenCount"); len(raw) != 0 {
+		metadata = putMetadata(metadata, "gemini.usageMetadata", raw)
+	}
 	if len(wire.Candidates) != 1 {
 		return llm.Response{}, fmt.Errorf("Gemini response has %d candidates; cross-protocol translation requires exactly one", len(wire.Candidates))
 	}
 	candidate := wire.Candidates[0]
-	content, metadata, err := decodeGeminiParts(candidate.Content.Parts, 0, make(map[string]string))
+	var envelope struct {
+		Candidates []json.RawMessage `json:"candidates"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return llm.Response{}, fmt.Errorf("decode Gemini candidate metadata: %w", err)
+	}
+	if len(envelope.Candidates) == 1 {
+		candidateMetadata, err := topLevelMetadata(envelope.Candidates[0], "content", "finishReason")
+		if err != nil {
+			return llm.Response{}, err
+		}
+		if len(candidateMetadata) != 0 {
+			raw, err := json.Marshal(candidateMetadata)
+			if err != nil {
+				return llm.Response{}, err
+			}
+			metadata = putMetadata(metadata, "gemini.candidate", raw)
+		}
+	}
+	content, partMetadata, err := decodeGeminiParts(candidate.Content.Parts, 0, make(map[string]string))
 	if err != nil {
 		return llm.Response{}, fmt.Errorf("decode Gemini candidate: %w", err)
+	}
+	for key, value := range partMetadata {
+		metadata = putMetadata(metadata, key, value)
 	}
 	response := llm.Response{
 		ID:         wire.ResponseID,
