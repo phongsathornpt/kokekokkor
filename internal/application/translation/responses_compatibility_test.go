@@ -180,3 +180,21 @@ func TestResponsesToAnthropicRejectsWebSearch(t *testing.T) {
 		t.Fatalf("error = %v, want ErrUnsupported", err)
 	}
 }
+
+
+func TestResponsesToGeminiStreamRejectsWebSearch(t *testing.T) {
+	request := llm.Request{
+		Messages: []llm.Message{{
+			Role:    llm.RoleUser,
+			Content: []llm.ContentBlock{llm.TextBlock{Text: "latest?"}},
+		}},
+		Tools: []llm.Tool{{Kind: llm.ToolKindWebSearch}},
+		Metadata: map[string]json.RawMessage{
+			"stream": json.RawMessage("true"),
+		},
+	}
+	_, _, err := ResponsesToGeminiStreamRequest(request)
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("error = %v, want ErrUnsupported", err)
+	}
+}
