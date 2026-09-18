@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
@@ -39,6 +40,27 @@ func NewHandlerWithRealtime(router routing.Router, forwarder Forwarder, realtime
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/conversations") {
+		if manager, ok := h.translator.(ConversationManager); ok {
+			body, err := replayBody(r)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
+			status, payload, handled, err := manager.HandleConversation(r.Context(), r.Method, r.URL.Path, body)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
+			if handled {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_, _ = w.Write(payload)
+				return
+			}
+		}
+	}
+
 	model := requestModel(r)
 	plan, err := h.router.Resolve(r.Context(), routing.Request{
 		Protocol:  provider.ProtocolOpenAI,
