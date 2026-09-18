@@ -38,6 +38,7 @@ type ResponsesStreamEncoder struct {
 	allText            strings.Builder
 	refusalMode        bool
 	previousResponseID string
+	conversationID     string
 	store              bool
 }
 
@@ -53,8 +54,9 @@ func (e *ResponsesStreamEncoder) SetRefusalMode(enabled bool) {
 	e.refusalMode = enabled
 }
 
-func (e *ResponsesStreamEncoder) SetState(previousResponseID string, store bool) {
+func (e *ResponsesStreamEncoder) SetState(previousResponseID, conversationID string, store bool) {
 	e.previousResponseID = previousResponseID
+	e.conversationID = conversationID
 	e.store = store
 }
 
@@ -393,6 +395,10 @@ func (e *ResponsesStreamEncoder) snapshot(status string, incomplete any, complet
 	if e.previousResponseID != "" {
 		previousResponseID = e.previousResponseID
 	}
+	var conversation *responseConversation
+	if e.conversationID != "" {
+		conversation = &responseConversation{ID: e.conversationID}
+	}
 	return responsesStreamSnapshot{
 		ID:                 e.id,
 		Object:             "response",
@@ -407,6 +413,7 @@ func (e *ResponsesStreamEncoder) snapshot(status string, incomplete any, complet
 		Usage:              &usage,
 		ParallelToolCalls:  true,
 		PreviousResponseID: previousResponseID,
+		Conversation:       conversation,
 		Reasoning:          map[string]any{"effort": nil, "summary": nil},
 		Store:              e.store,
 		Temperature:        1,
