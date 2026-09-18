@@ -13,11 +13,19 @@ import (
 )
 
 type Runtime struct {
-	client upstream.Client
+	client        upstream.Client
+	responseState ResponseStateStore
 }
 
 func New(client upstream.Client) *Runtime {
-	return &Runtime{client: client}
+	return NewWithResponseStateStore(client, newMemoryResponseStateStore())
+}
+
+func NewWithResponseStateStore(client upstream.Client, responseState ResponseStateStore) *Runtime {
+	if responseState == nil {
+		responseState = newMemoryResponseStateStore()
+	}
+	return &Runtime{client: client, responseState: responseState}
 }
 
 func (r *Runtime) OpenAIChatToAnthropic(ctx context.Context, target provider.Target, model string, header http.Header, body []byte) (upstream.Response, error) {
