@@ -77,12 +77,16 @@ func DecodeGenerateContentRequest(data []byte) (llm.Request, error) {
 	}
 
 	for _, tool := range wire.Tools {
+		if tool.GoogleSearch != nil {
+			request.Tools = append(request.Tools, llm.Tool{Kind: llm.ToolKindWebSearch})
+		}
 		for _, function := range tool.FunctionDeclarations {
 			schema := function.Parameters
 			if len(schema) == 0 {
 				schema = json.RawMessage(`{"type":"object"}`)
 			}
 			request.Tools = append(request.Tools, llm.Tool{
+				Kind:        llm.ToolKindFunction,
 				Name:        function.Name,
 				Description: function.Description,
 				InputSchema: append(json.RawMessage(nil), schema...),
@@ -131,13 +135,22 @@ func EncodeGenerateContentRequest(request llm.Request) ([]byte, error) {
 	if len(request.Tools) != 0 {
 		functions := make([]geminiFunctionDeclaration, 0, len(request.Tools))
 		for _, tool := range request.Tools {
-			functions = append(functions, geminiFunctionDeclaration{
-				Name:        tool.Name,
-				Description: tool.Description,
-				Parameters:  append(json.RawMessage(nil), tool.InputSchema...),
-			})
+			switch tool.Kind {
+			case "", llm.ToolKindFunction:
+				functions = append(functions, geminiFunctionDeclaration{
+					Name:        tool.Name,
+					Description: tool.Description,
+					Parameters:  append(json.RawMessage(nil), tool.InputSchema...),
+				})
+			case llm.ToolKindWebSearch:
+				wire.Tools = append(wire.Tools, geminiTool{GoogleSearch: &geminiGoogleSearch{}})
+			default:
+				return nil, fmt.Errorf("canonical tool kind %q cannot be encoded as Gemini tool", tool.Kind)
+			}
 		}
-		wire.Tools = []geminiTool{{FunctionDeclarations: functions}}
+		if len(functions) != 0 {
+			wire.Tools = append(wire.Tools, geminiTool{FunctionDeclarations: functions})
+		}
 	}
 	if request.ToolChoice != nil {
 		config, err := encodeGeminiToolChoice(*request.ToolChoice)
