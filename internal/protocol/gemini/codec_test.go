@@ -116,7 +116,7 @@ func TestDecodeGenerateContentResponseMapsWebGroundingToCitations(t *testing.T) 
 			"groundingMetadata":{
 				"groundingChunks":[{"web":{"uri":"https://example.com/weather","title":"Weather"}}],
 				"groundingSupports":[{
-					"segment":{"partIndex":0,"startIndex":8,"endIndex":24,"text":"อากาศ"},
+					"segment":{"partIndex":0,"startIndex":8,"endIndex":23,"text":"อากาศ"},
 					"groundingChunkIndices":[0]
 				}]
 			}
