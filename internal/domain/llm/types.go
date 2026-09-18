@@ -155,6 +155,7 @@ type ResponseState struct {
 	PreviousResponseID string
 	ConversationID     string
 	Store              bool
+	InstructionMessages int
 }
 
 type Request struct {
