@@ -15,8 +15,16 @@ type ContentBlock interface {
 	isContentBlock()
 }
 
+type URLCitation struct {
+	StartIndex int
+	EndIndex   int
+	URL        string
+	Title      string
+}
+
 type TextBlock struct {
-	Text string
+	Text      string
+	Citations []URLCitation
 }
 
 func (TextBlock) isContentBlock() {}
