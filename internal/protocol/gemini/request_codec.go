@@ -77,7 +77,7 @@ func DecodeGenerateContentRequest(data []byte) (llm.Request, error) {
 	}
 
 	for _, tool := range wire.Tools {
-		if tool.GoogleSearch != nil {
+		if len(tool.GoogleSearch) != 0 {
 			request.Tools = append(request.Tools, llm.Tool{Kind: llm.ToolKindWebSearch})
 		}
 		for _, function := range tool.FunctionDeclarations {
@@ -143,7 +143,7 @@ func EncodeGenerateContentRequest(request llm.Request) ([]byte, error) {
 					Parameters:  append(json.RawMessage(nil), tool.InputSchema...),
 				})
 			case llm.ToolKindWebSearch:
-				wire.Tools = append(wire.Tools, geminiTool{GoogleSearch: &geminiGoogleSearch{}})
+				wire.Tools = append(wire.Tools, geminiTool{GoogleSearch: json.RawMessage(`{}`)})
 			default:
 				return nil, fmt.Errorf("canonical tool kind %q cannot be encoded as Gemini tool", tool.Kind)
 			}
