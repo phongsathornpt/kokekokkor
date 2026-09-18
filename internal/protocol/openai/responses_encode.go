@@ -26,6 +26,10 @@ func EncodeResponsesResponse(response llm.Response) ([]byte, error) {
 		return nil, err
 	}
 	now := time.Now().Unix()
+	var conversation *responseConversation
+	if response.ConversationID != "" {
+		conversation = &responseConversation{ID: response.ConversationID}
+	}
 	wire := responseObject{
 		ID:                 response.ID,
 		Object:             "response",
@@ -35,6 +39,7 @@ func EncodeResponsesResponse(response llm.Response) ([]byte, error) {
 		IncompleteDetails:  incomplete,
 		Model:              response.Model,
 		PreviousResponseID: response.PreviousResponseID,
+		Conversation:       conversation,
 		Output:             output,
 		OutputText:         outputText,
 		Usage: responseUsage{
