@@ -18,7 +18,17 @@ type Record struct {
 	ExpiresAt   time.Time
 }
 
+type Conversation struct {
+	ID        string
+	CreatedAt time.Time
+	Metadata  map[string]string
+	Messages  []llm.Message
+}
+
 type Store interface {
 	LoadResponse(context.Context, string) (Record, error)
 	SaveResponse(context.Context, string, Record) error
+	LoadConversation(context.Context, string) (Conversation, error)
+	SaveConversation(context.Context, Conversation) error
+	DeleteConversation(context.Context, string) error
 }
