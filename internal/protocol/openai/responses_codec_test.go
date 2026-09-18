@@ -48,6 +48,40 @@ func TestDecodeResponsesRequestPortableItems(t *testing.T) {
 	}
 }
 
+func TestDecodeResponsesRequestInlineFile(t *testing.T) {
+	request, err := DecodeResponsesRequest([]byte(`{
+		"model":"portable",
+		"input":[{"role":"user","content":[
+			{"type":"input_file","filename":"note.txt","file_data":"data:text/plain;base64,aGVsbG8="}
+		]}]
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeResponsesRequest() error = %v", err)
+	}
+	if len(request.Messages) != 1 || len(request.Messages[0].Content) != 1 {
+		t.Fatalf("messages = %#v", request.Messages)
+	}
+	doc, ok := request.Messages[0].Content[0].(llm.DocumentBlock)
+	if !ok {
+		t.Fatalf("content = %#v", request.Messages[0].Content[0])
+	}
+	if doc.Name != "note.txt" || doc.Source.Type != llm.MediaSourceBase64 || doc.Source.MediaType != "text/plain" || doc.Source.Data != "aGVsbG8=" {
+		t.Fatalf("document = %#v", doc)
+	}
+}
+
+func TestDecodeResponsesRequestRejectsInvalidInlineFile(t *testing.T) {
+	_, err := DecodeResponsesRequest([]byte(`{
+		"model":"portable",
+		"input":[{"role":"user","content":[
+			{"type":"input_file","file_data":"data:text/plain;base64,%%%"}
+		]}]
+	}`))
+	if err == nil {
+		t.Fatal("DecodeResponsesRequest() error = nil, want invalid base64 error")
+	}
+}
+
 func TestDecodeResponsesRequestWebSearch(t *testing.T) {
 	request, err := DecodeResponsesRequest([]byte(`{
 		"model":"portable",
