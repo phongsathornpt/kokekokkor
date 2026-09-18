@@ -9,6 +9,7 @@ import (
 
 type ResponsesStreamOptions struct {
 	IncludeObfuscation bool
+	BufferRefusals     bool
 }
 
 func ResponsesToAnthropicStreamRequest(request llm.Request) (llm.Request, ResponsesStreamOptions, error) {
@@ -32,6 +33,14 @@ func ResponsesToAnthropicStreamRequest(request llm.Request) (llm.Request, Respon
 }
 
 func AnthropicToResponsesStreamEvent(event llm.StreamEvent) error {
+	return anthropicToResponsesStreamEvent(event, false)
+}
+
+func AnthropicToResponsesBufferedStreamEvent(event llm.StreamEvent) error {
+	return anthropicToResponsesStreamEvent(event, true)
+}
+
+func anthropicToResponsesStreamEvent(event llm.StreamEvent, allowRefusal bool) error {
 	if len(event.Metadata) != 0 {
 		return unsupported("stream event metadata", fmt.Sprintf("event %q contains provider-specific metadata", event.Type))
 	}
@@ -56,7 +65,9 @@ func AnthropicToResponsesStreamEvent(event llm.StreamEvent) error {
 		switch event.StopReason {
 		case llm.StopReasonEndTurn, llm.StopReasonStopSequence, llm.StopReasonToolUse, llm.StopReasonMaxTokens:
 		case llm.StopReasonContentBlock:
-			return unsupported("refusal", "Anthropic refusal/content-block stop is not mapped to Responses refusal events yet")
+			if !allowRefusal {
+				return unsupported("refusal", "Anthropic refusal/content-block stop requires stream_options.buffer_refusals=true")
+			}
 		default:
 			return unsupported("stop_reason", "upstream stop reason has no Responses terminal-event mapping")
 		}
@@ -81,6 +92,10 @@ func consumeResponsesStreamOptions(metadata map[string]json.RawMessage) (Respons
 		case "include_obfuscation":
 			if err := json.Unmarshal(value, &options.IncludeObfuscation); err != nil {
 				return ResponsesStreamOptions{}, unsupported("stream_options.include_obfuscation", "must be a boolean")
+			}
+		case "buffer_refusals":
+			if err := json.Unmarshal(value, &options.BufferRefusals); err != nil {
+				return ResponsesStreamOptions{}, unsupported("stream_options.buffer_refusals", "must be a boolean")
 			}
 		default:
 			return ResponsesStreamOptions{}, unsupported("stream_options", fmt.Sprintf("unsupported field %q", key))
