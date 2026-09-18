@@ -140,7 +140,6 @@ func encodeGeminiFinishReason(reason llm.StopReason) (string, error) {
 	}
 }
 
-
 func applyGeminiGrounding(content []llm.ContentBlock, raw json.RawMessage) ([]llm.ContentBlock, bool, error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil {
