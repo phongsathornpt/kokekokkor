@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 )
@@ -18,6 +20,7 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return llm.Request{}, fmt.Errorf("decode OpenAI Responses metadata: %w", err)
 	}
+	rawTools := cloneRaw(raw["tools"])
 	for _, key := range []string{
 		"model", "instructions", "input", "tools", "tool_choice",
 		"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning", "text",
@@ -68,22 +71,39 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 	}
 	request.Messages = append(request.Messages, messages...)
 
+	var rawToolObjects []map[string]json.RawMessage
+	if len(rawTools) != 0 && string(rawTools) != "null" {
+		if err := json.Unmarshal(rawTools, &rawToolObjects); err != nil {
+			return llm.Request{}, fmt.Errorf("decode Responses tool metadata: %w", err)
+		}
+	}
 	for i, tool := range wire.Tools {
-		if tool.Type != "function" {
+		switch tool.Type {
+		case "function":
+			if tool.Name == "" || len(tool.Parameters) == 0 {
+				return llm.Request{}, fmt.Errorf("Responses function tool %d is missing name or parameters", i)
+			}
+			canonical := llm.Tool{
+				Kind:        llm.ToolKindFunction,
+				Name:        tool.Name,
+				Description: tool.Description,
+				InputSchema: cloneRaw(tool.Parameters),
+			}
+			if tool.Strict {
+				canonical.Metadata = map[string]json.RawMessage{"openai.strict": json.RawMessage("true")}
+			}
+			request.Tools = append(request.Tools, canonical)
+		case "web_search":
+			if i >= len(rawToolObjects) {
+				return llm.Request{}, fmt.Errorf("Responses web_search tool %d metadata is missing", i)
+			}
+			if extras := responseToolExtras(rawToolObjects[i], "type"); len(extras) != 0 {
+				return llm.Request{}, fmt.Errorf("Responses web_search tool %d has unsupported options: %s", i, strings.Join(extras, ", "))
+			}
+			request.Tools = append(request.Tools, llm.Tool{Kind: llm.ToolKindWebSearch})
+		default:
 			return llm.Request{}, fmt.Errorf("Responses tool %d has unsupported type %q", i, tool.Type)
 		}
-		if tool.Name == "" || len(tool.Parameters) == 0 {
-			return llm.Request{}, fmt.Errorf("Responses function tool %d is missing name or parameters", i)
-		}
-		canonical := llm.Tool{
-			Name:        tool.Name,
-			Description: tool.Description,
-			InputSchema: cloneRaw(tool.Parameters),
-		}
-		if tool.Strict {
-			canonical.Metadata = map[string]json.RawMessage{"openai.strict": json.RawMessage("true")}
-		}
-		request.Tools = append(request.Tools, canonical)
 	}
 
 	if len(wire.ToolChoice) != 0 && string(wire.ToolChoice) != "null" {
@@ -326,4 +346,20 @@ func decodeResponsesToolChoice(raw json.RawMessage) (*llm.ToolChoice, error) {
 		return nil, fmt.Errorf("unsupported Responses tool_choice type %q", choice.Type)
 	}
 	return &llm.ToolChoice{Mode: llm.ToolChoiceNamed, Name: choice.Name}, nil
+}
+
+
+func responseToolExtras(object map[string]json.RawMessage, known ...string) []string {
+	allowed := make(map[string]struct{}, len(known))
+	for _, key := range known {
+		allowed[key] = struct{}{}
+	}
+	extras := make([]string, 0)
+	for key := range object {
+		if _, ok := allowed[key]; !ok {
+			extras = append(extras, key)
+		}
+	}
+	sort.Strings(extras)
+	return extras
 }
