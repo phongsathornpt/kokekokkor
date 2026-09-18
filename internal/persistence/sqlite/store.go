@@ -80,6 +80,13 @@ func (s *Store) migrate(ctx context.Context) error {
 			FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS model_routes_provider_idx ON model_routes(provider_id)`,
+		`CREATE TABLE IF NOT EXISTS response_states (
+			id TEXT PRIMARY KEY,
+			messages BLOB NOT NULL,
+			continuable INTEGER NOT NULL CHECK (continuable IN (0, 1)),
+			expires_at INTEGER NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS response_states_expires_idx ON response_states(expires_at)`,
 		`INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)`,
 	}
 	for _, statement := range statements {
