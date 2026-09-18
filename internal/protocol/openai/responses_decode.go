@@ -348,7 +348,6 @@ func decodeResponsesToolChoice(raw json.RawMessage) (*llm.ToolChoice, error) {
 	return &llm.ToolChoice{Mode: llm.ToolChoiceNamed, Name: choice.Name}, nil
 }
 
-
 func responseToolExtras(object map[string]json.RawMessage, known ...string) []string {
 	allowed := make(map[string]struct{}, len(known))
 	for _, key := range known {
