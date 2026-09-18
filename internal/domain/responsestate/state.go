@@ -15,6 +15,8 @@ const DefaultRetention = 30 * 24 * time.Hour
 type Record struct {
 	Messages    []llm.Message
 	Continuable bool
+	Payload     []byte
+	Status      string
 	ExpiresAt   time.Time
 }
 
