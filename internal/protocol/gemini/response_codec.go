@@ -160,7 +160,7 @@ func applyGeminiGrounding(content []llm.ContentBlock, raw json.RawMessage) ([]ll
 		} `json:"groundingChunks"`
 		Supports []struct {
 			GroundingChunkIndices []int `json:"groundingChunkIndices"`
-			Segment struct {
+			Segment               struct {
 				PartIndex  int `json:"partIndex"`
 				StartIndex int `json:"startIndex"`
 				EndIndex   int `json:"endIndex"`
