@@ -25,6 +25,7 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 	for _, key := range []string{
 		"model", "instructions", "input", "tools", "tool_choice",
 		"parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "reasoning", "text",
+		"previous_response_id", "conversation", "store",
 	} {
 		delete(raw, key)
 	}
@@ -36,6 +37,11 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 		TopP:            wire.TopP,
 		Metadata:        raw,
 	}
+	state, err := decodeResponsesState(wire)
+	if err != nil {
+		return llm.Request{}, err
+	}
+	request.ResponseState = state
 	if wire.Reasoning != nil {
 		request.Reasoning = decodeResponsesReasoning(*wire.Reasoning)
 	}
@@ -63,6 +69,10 @@ func DecodeResponsesRequest(data []byte) (llm.Request, error) {
 				Role:    llm.RoleDeveloper,
 				Content: []llm.ContentBlock{llm.TextBlock{Text: instructions}},
 			})
+			if request.ResponseState == nil {
+				request.ResponseState = &llm.ResponseState{}
+			}
+			request.ResponseState.InstructionMessages = 1
 		}
 	}
 
@@ -378,4 +388,32 @@ func responseToolExtras(object map[string]json.RawMessage, known ...string) []st
 	}
 	sort.Strings(extras)
 	return extras
+}
+
+
+func decodeResponsesState(wire responsesRequest) (*llm.ResponseState, error) {
+	state := &llm.ResponseState{PreviousResponseID: wire.PreviousResponseID}
+	if wire.Store != nil {
+		state.Store = *wire.Store
+	}
+	if len(wire.Conversation) != 0 && string(wire.Conversation) != "null" {
+		var id string
+		if err := json.Unmarshal(wire.Conversation, &id); err != nil {
+			var object struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(wire.Conversation, &object); err != nil || object.ID == "" {
+				return nil, fmt.Errorf("Responses conversation must be a string or object with id")
+			}
+			id = object.ID
+		}
+		state.ConversationID = id
+	}
+	if state.PreviousResponseID != "" && state.ConversationID != "" {
+		return nil, fmt.Errorf("Responses previous_response_id cannot be used with conversation")
+	}
+	if state.PreviousResponseID == "" && state.ConversationID == "" && wire.Store == nil {
+		return nil, nil
+	}
+	return state, nil
 }
