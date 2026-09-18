@@ -23,10 +23,6 @@ func (r *Runtime) OpenAIChatToGeminiStream(ctx context.Context, target provider.
 		return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
 	}
 	request.Model = model
-	request, statePlan, err := r.resolveResponsesState(ctx, request)
-	if err != nil {
-		return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
-	}
 	request, options, err := apptranslation.OpenAIToGeminiStreamRequest(request)
 	if err != nil {
 		return upstream.StreamResponse{}, err
@@ -76,6 +72,10 @@ func (r *Runtime) OpenAIResponsesToGeminiStream(ctx context.Context, target prov
 		return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
 	}
 	request.Model = model
+	request, statePlan, err := r.resolveResponsesState(ctx, request)
+	if err != nil {
+		return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
+	}
 	request, options, err := apptranslation.ResponsesToGeminiStreamRequest(request)
 	if err != nil {
 		return upstream.StreamResponse{}, err
