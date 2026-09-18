@@ -55,7 +55,6 @@ func (s *memoryResponseStateStore) SaveResponse(_ context.Context, id string, re
 	return nil
 }
 
-
 func (s *memoryResponseStateStore) DeleteResponse(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
