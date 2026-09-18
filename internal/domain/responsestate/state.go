@@ -19,10 +19,11 @@ type Record struct {
 }
 
 type Conversation struct {
-	ID        string
-	CreatedAt time.Time
-	Metadata  map[string]string
-	Messages  []llm.Message
+	ID          string
+	CreatedAt   time.Time
+	Metadata    map[string]string
+	Messages    []llm.Message
+	Continuable bool
 }
 
 type Store interface {
