@@ -82,6 +82,14 @@ type responseSummaryPart struct {
 	Text string `json:"text"`
 }
 
+type responseURLCitation struct {
+	Type       string `json:"type"`
+	StartIndex int    `json:"start_index"`
+	EndIndex   int    `json:"end_index"`
+	URL        string `json:"url"`
+	Title      string `json:"title"`
+}
+
 type responseOutputPart struct {
 	Type        string `json:"type"`
 	Text        string `json:"text,omitempty"`

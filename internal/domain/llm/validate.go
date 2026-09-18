@@ -66,6 +66,11 @@ func validateRole(role Role) error {
 func validateContent(block ContentBlock) error {
 	switch value := block.(type) {
 	case TextBlock:
+		for _, citation := range value.Citations {
+			if citation.StartIndex < 0 || citation.EndIndex < citation.StartIndex || citation.EndIndex > len([]rune(value.Text)) || citation.URL == "" {
+				return ErrInvalidContent
+			}
+		}
 		return nil
 	case ImageBlock:
 		return validateMediaSource(value.Source)
