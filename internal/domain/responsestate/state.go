@@ -10,7 +10,10 @@ import (
 
 var ErrNotFound = errors.New("response state not found")
 
-const DefaultRetention = 30 * 24 * time.Hour
+const (
+	DefaultRetention    = 30 * 24 * time.Hour
+	BackgroundRetention = 10 * time.Minute
+)
 
 type Record struct {
 	Messages    []llm.Message
