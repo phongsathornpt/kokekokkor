@@ -33,8 +33,9 @@ func EncodeResponsesResponse(response llm.Response) ([]byte, error) {
 		Status:            status,
 		Error:             nil,
 		IncompleteDetails: incomplete,
-		Model:             response.Model,
-		Output:            output,
+		Model:              response.Model,
+		PreviousResponseID: response.PreviousResponseID,
+		Output:             output,
 		OutputText:        outputText,
 		Usage: responseUsage{
 			InputTokens: response.Usage.InputTokens,
