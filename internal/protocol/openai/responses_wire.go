@@ -62,19 +62,19 @@ type responseConversation struct {
 }
 
 type responseObject struct {
-	ID                 string               `json:"id"`
-	Object             string               `json:"object"`
-	CreatedAt          int64                `json:"created_at"`
-	CompletedAt        int64                `json:"completed_at,omitempty"`
-	Status             string               `json:"status"`
-	Error              any                  `json:"error"`
-	IncompleteDetails  any                  `json:"incomplete_details"`
-	Model              string               `json:"model"`
+	ID                 string                `json:"id"`
+	Object             string                `json:"object"`
+	CreatedAt          int64                 `json:"created_at"`
+	CompletedAt        int64                 `json:"completed_at,omitempty"`
+	Status             string                `json:"status"`
+	Error              any                   `json:"error"`
+	IncompleteDetails  any                   `json:"incomplete_details"`
+	Model              string                `json:"model"`
 	PreviousResponseID string                `json:"previous_response_id,omitempty"`
 	Conversation       *responseConversation `json:"conversation,omitempty"`
-	Output             []responseOutputItem `json:"output"`
-	OutputText         string               `json:"output_text,omitempty"`
-	Usage              responseUsage        `json:"usage"`
+	Output             []responseOutputItem  `json:"output"`
+	OutputText         string                `json:"output_text,omitempty"`
+	Usage              responseUsage         `json:"usage"`
 }
 
 type responseWebSearchAction struct {
