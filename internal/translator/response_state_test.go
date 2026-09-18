@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
+	"github.com/phongsathornpt/kokekokkor/internal/domain/responsestate"
 )
 
 func TestResponsesStateContinuationDoesNotInheritInstructions(t *testing.T) {
@@ -61,7 +62,7 @@ func TestResponsesStateContinuationDoesNotInheritInstructions(t *testing.T) {
 func TestResponsesStateRejectsNonportableContinuation(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryResponseStateStore()
-	if err := store.SaveResponse(ctx, "resp_search", ResponseStateRecord{
+	if err := store.SaveResponse(ctx, "resp_search", responsestate.Record{
 		Continuable: false,
 	}); err != nil {
 		t.Fatalf("SaveResponse() error = %v", err)
