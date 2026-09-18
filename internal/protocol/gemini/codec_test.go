@@ -87,6 +87,27 @@ func TestDecodeGenerateContentResponseMapsUsageAndStop(t *testing.T) {
 	}
 }
 
+func TestDecodeGenerateContentResponsePreservesProviderMetadata(t *testing.T) {
+	response, err := DecodeGenerateContentResponse([]byte(`{
+		"responseId":"resp_grounded",
+		"promptFeedback":{"blockReason":"OTHER"},
+		"candidates":[{
+			"content":{"role":"model","parts":[{"text":"grounded"}]},
+			"finishReason":"STOP",
+			"groundingMetadata":{"webSearchQueries":["example query"]}
+		}],
+		"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2,"trafficType":"ON_DEMAND"}
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeGenerateContentResponse() error = %v", err)
+	}
+	for _, key := range []string{"promptFeedback", "gemini.candidate", "gemini.usageMetadata"} {
+		if len(response.Metadata[key]) == 0 {
+			t.Fatalf("response metadata missing %q: %#v", key, response.Metadata)
+		}
+	}
+}
+
 func TestDecodeGenerateContentResponseTreatsFunctionCallAsToolUse(t *testing.T) {
 	response, err := DecodeGenerateContentResponse([]byte(`{
 		"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"weather","args":{"city":"Bangkok"}}}]},"finishReason":"STOP"}]
