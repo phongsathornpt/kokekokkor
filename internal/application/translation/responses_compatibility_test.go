@@ -132,7 +132,6 @@ func TestResponsesToGeminiRejectsBackgroundExecution(t *testing.T) {
 	}
 }
 
-
 func TestResponsesToGeminiAllowsAutoWebSearch(t *testing.T) {
 	request := llm.Request{
 		Messages: []llm.Message{{
