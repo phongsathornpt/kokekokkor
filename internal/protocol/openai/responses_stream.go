@@ -240,19 +240,28 @@ func (e *ResponsesStreamEncoder) stopContent(event llm.StreamEvent) error {
 		text := state.text.String()
 		if e.refusalMode {
 			if err := e.write("response.refusal.done", map[string]any{
-				"item_id": state.itemID, "output_index": state.outputIndex, "content_index": 0, "refusal": text,
+				"item_id":       state.itemID,
+				"output_index":  state.outputIndex,
+				"content_index": 0,
+				"refusal":       text,
 			}); err != nil {
 				return err
 			}
 			part := responseOutputPart{Type: "refusal", Refusal: text}
 			if err := e.write("response.content_part.done", map[string]any{
-				"item_id": state.itemID, "output_index": state.outputIndex, "content_index": 0, "part": part,
+				"item_id":       state.itemID,
+				"output_index":  state.outputIndex,
+				"content_index": 0,
+				"part":          part,
 			}); err != nil {
 				return err
 			}
 			e.output[state.outputIndex].Status = "completed"
 			e.output[state.outputIndex].Content = []responseOutputPart{part}
-			return e.write("response.output_item.done", map[string]any{"output_index": state.outputIndex, "item": e.output[state.outputIndex]})
+			return e.write("response.output_item.done", map[string]any{
+				"output_index": state.outputIndex,
+				"item":         e.output[state.outputIndex],
+			})
 		}
 		if err := e.write("response.output_text.done", map[string]any{
 			"item_id":       state.itemID,
@@ -334,7 +343,10 @@ func (e *ResponsesStreamEncoder) stopResponse(event llm.StreamEvent) error {
 
 func (e *ResponsesStreamEncoder) writeRefusalDelta(state *responsesStreamBlock, delta string) error {
 	fields := map[string]any{
-		"item_id": state.itemID, "output_index": state.outputIndex, "content_index": 0, "delta": delta,
+		"item_id":       state.itemID,
+		"output_index":  state.outputIndex,
+		"content_index": 0,
+		"delta":         delta,
 	}
 	e.addObfuscation(fields)
 	return e.write("response.refusal.delta", fields)
