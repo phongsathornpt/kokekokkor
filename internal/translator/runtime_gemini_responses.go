@@ -59,6 +59,7 @@ func (r *Runtime) OpenAIResponsesToGemini(ctx context.Context, target provider.T
 	}
 	if statePlan.state != nil {
 		canonical.PreviousResponseID = statePlan.state.PreviousResponseID
+		canonical.ConversationID = statePlan.state.ConversationID
 	}
 	if err := r.persistResponsesState(ctx, statePlan, canonical); err != nil {
 		return upstream.Response{}, apptranslation.WrapResponse(err)
