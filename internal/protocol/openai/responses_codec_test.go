@@ -111,6 +111,46 @@ func TestEncodeResponsesResponseTextAndToolCall(t *testing.T) {
 	}
 }
 
+func TestEncodeResponsesResponseURLCitation(t *testing.T) {
+	encoded, err := EncodeResponsesResponse(llm.Response{
+		ID:    "resp_cited",
+		Model: "gemini-upstream",
+		Content: []llm.ContentBlock{llm.TextBlock{
+			Text: "grounded answer",
+			Citations: []llm.URLCitation{{
+				StartIndex: 0,
+				EndIndex:   8,
+				URL:        "https://example.com/source",
+				Title:      "Source",
+			}},
+		}},
+		StopReason: llm.StopReasonEndTurn,
+	})
+	if err != nil {
+		t.Fatalf("EncodeResponsesResponse() error = %v", err)
+	}
+	var response struct {
+		Output []struct {
+			Content []struct {
+				Annotations []struct {
+					Type       string `json:"type"`
+					StartIndex int    `json:"start_index"`
+					EndIndex   int    `json:"end_index"`
+					URL        string `json:"url"`
+					Title      string `json:"title"`
+				} `json:"annotations"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(encoded, &response); err != nil {
+		t.Fatalf("decode encoded response: %v", err)
+	}
+	annotation := response.Output[0].Content[0].Annotations[0]
+	if annotation.Type != "url_citation" || annotation.StartIndex != 0 || annotation.EndIndex != 8 || annotation.URL != "https://example.com/source" || annotation.Title != "Source" {
+		t.Fatalf("annotation = %#v", annotation)
+	}
+}
+
 func TestEncodeResponsesResponseRefusal(t *testing.T) {
 	encoded, err := EncodeResponsesResponse(llm.Response{
 		ID:         "msg_refusal",
