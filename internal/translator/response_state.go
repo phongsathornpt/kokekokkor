@@ -55,6 +55,17 @@ func (s *memoryResponseStateStore) SaveResponse(_ context.Context, id string, re
 	return nil
 }
 
+
+func (s *memoryResponseStateStore) DeleteResponse(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.responses[id]; !ok {
+		return responsestate.ErrNotFound
+	}
+	delete(s.responses, id)
+	return nil
+}
+
 type responseStatePlan struct {
 	state        *llm.ResponseState
 	history      []llm.Message
