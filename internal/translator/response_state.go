@@ -12,12 +12,16 @@ import (
 )
 
 type memoryResponseStateStore struct {
-	mu        sync.RWMutex
-	responses map[string]responsestate.Record
+	mu            sync.RWMutex
+	responses     map[string]responsestate.Record
+	conversations map[string]responsestate.Conversation
 }
 
 func newMemoryResponseStateStore() *memoryResponseStateStore {
-	return &memoryResponseStateStore{responses: make(map[string]responsestate.Record)}
+	return &memoryResponseStateStore{
+		responses:     make(map[string]responsestate.Record),
+		conversations: make(map[string]responsestate.Conversation),
+	}
 }
 
 func (s *memoryResponseStateStore) LoadResponse(_ context.Context, id string) (responsestate.Record, error) {
@@ -133,6 +137,52 @@ func cloneStateMessages(messages []llm.Message) []llm.Message {
 	for i, message := range messages {
 		result[i] = message
 		result[i].Content = append([]llm.ContentBlock(nil), message.Content...)
+	}
+	return result
+}
+
+
+func (s *memoryResponseStateStore) LoadConversation(_ context.Context, id string) (responsestate.Conversation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	conversation, ok := s.conversations[id]
+	if !ok {
+		return responsestate.Conversation{}, responsestate.ErrNotFound
+	}
+	conversation.Messages = cloneStateMessages(conversation.Messages)
+	conversation.Metadata = cloneConversationMetadata(conversation.Metadata)
+	return conversation, nil
+}
+
+func (s *memoryResponseStateStore) SaveConversation(_ context.Context, conversation responsestate.Conversation) error {
+	if conversation.ID == "" {
+		return fmt.Errorf("conversation id must not be empty")
+	}
+	conversation.Messages = cloneStateMessages(conversation.Messages)
+	conversation.Metadata = cloneConversationMetadata(conversation.Metadata)
+	s.mu.Lock()
+	s.conversations[conversation.ID] = conversation
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *memoryResponseStateStore) DeleteConversation(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.conversations[id]; !ok {
+		return responsestate.ErrNotFound
+	}
+	delete(s.conversations, id)
+	return nil
+}
+
+func cloneConversationMetadata(metadata map[string]string) map[string]string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(metadata))
+	for key, value := range metadata {
+		result[key] = value
 	}
 	return result
 }
