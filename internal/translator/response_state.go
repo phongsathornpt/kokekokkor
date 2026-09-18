@@ -5,47 +5,43 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
+	"github.com/phongsathornpt/kokekokkor/internal/domain/responsestate"
 )
-
-var errResponseStateNotFound = errors.New("response state not found")
-
-type ResponseStateRecord struct {
-	Messages    []llm.Message
-	Continuable bool
-}
-
-type ResponseStateStore interface {
-	LoadResponse(context.Context, string) (ResponseStateRecord, error)
-	SaveResponse(context.Context, string, ResponseStateRecord) error
-}
 
 type memoryResponseStateStore struct {
 	mu        sync.RWMutex
-	responses map[string]ResponseStateRecord
+	responses map[string]responsestate.Record
 }
 
 func newMemoryResponseStateStore() *memoryResponseStateStore {
-	return &memoryResponseStateStore{responses: make(map[string]ResponseStateRecord)}
+	return &memoryResponseStateStore{responses: make(map[string]responsestate.Record)}
 }
 
-func (s *memoryResponseStateStore) LoadResponse(_ context.Context, id string) (ResponseStateRecord, error) {
+func (s *memoryResponseStateStore) LoadResponse(_ context.Context, id string) (responsestate.Record, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	record, ok := s.responses[id]
 	if !ok {
-		return ResponseStateRecord{}, errResponseStateNotFound
+		return responsestate.Record{}, responsestate.ErrNotFound
+	}
+	if !record.ExpiresAt.IsZero() && time.Now().After(record.ExpiresAt) {
+		return responsestate.Record{}, responsestate.ErrNotFound
 	}
 	record.Messages = cloneStateMessages(record.Messages)
 	return record, nil
 }
 
-func (s *memoryResponseStateStore) SaveResponse(_ context.Context, id string, record ResponseStateRecord) error {
+func (s *memoryResponseStateStore) SaveResponse(_ context.Context, id string, record responsestate.Record) error {
 	if id == "" {
 		return fmt.Errorf("response state id must not be empty")
 	}
 	record.Messages = cloneStateMessages(record.Messages)
+	if record.ExpiresAt.IsZero() {
+		record.ExpiresAt = time.Now().Add(responsestate.DefaultRetention)
+	}
 	s.mu.Lock()
 	s.responses[id] = record
 	s.mu.Unlock()
@@ -77,7 +73,7 @@ func (r *Runtime) resolveResponsesState(ctx context.Context, request llm.Request
 	if state.PreviousResponseID != "" {
 		record, err := r.responseState.LoadResponse(ctx, state.PreviousResponseID)
 		if err != nil {
-			if errors.Is(err, errResponseStateNotFound) {
+			if errors.Is(err, responsestate.ErrNotFound) {
 				return llm.Request{}, responseStatePlan{}, fmt.Errorf("previous_response_id %q was not found", state.PreviousResponseID)
 			}
 			return llm.Request{}, responseStatePlan{}, err
@@ -109,9 +105,10 @@ func (r *Runtime) persistResponsesState(ctx context.Context, plan responseStateP
 	if len(message.Content) != 0 {
 		history = append(history, message)
 	}
-	return r.responseState.SaveResponse(ctx, response.ID, ResponseStateRecord{
+	return r.responseState.SaveResponse(ctx, response.ID, responsestate.Record{
 		Messages:    history,
 		Continuable: continuable,
+		ExpiresAt:   time.Now().Add(responsestate.DefaultRetention),
 	})
 }
 
