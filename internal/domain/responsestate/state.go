@@ -31,6 +31,7 @@ type Conversation struct {
 type Store interface {
 	LoadResponse(context.Context, string) (Record, error)
 	SaveResponse(context.Context, string, Record) error
+	DeleteResponse(context.Context, string) error
 	LoadConversation(context.Context, string) (Conversation, error)
 	SaveConversation(context.Context, Conversation) error
 	DeleteConversation(context.Context, string) error
