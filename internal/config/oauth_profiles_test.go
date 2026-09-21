@@ -75,7 +75,7 @@ func TestLoadOAuthProfilesAntigravity(t *testing.T) {
 	t.Setenv("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL", "https://gateway.example.com")
 	t.Setenv("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID", "")
 	t.Setenv("KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID", "")
-	t.Setenv("KOKEKOKKOR_OAUTH_PROFILES_JSON", `[{"kind":"antigravity"}]`)
+	t.Setenv("KOKEKOKKOR_OAUTH_PROFILES_JSON", `[{"kind":"antigravity","client_id":"test-client-id","client_secret":"test-client-secret"}]`)
 
 	cfg, enabled, err := LoadOAuth()
 	if err != nil {
@@ -84,7 +84,7 @@ func TestLoadOAuthProfilesAntigravity(t *testing.T) {
 	if !enabled || len(cfg.Profiles) != 1 {
 		t.Fatalf("enabled=%v profiles=%#v", enabled, cfg.Profiles)
 	}
-	if cfg.Profiles[0].Kind != "antigravity" || cfg.Profiles[0].ProviderID != "antigravity" || cfg.Profiles[0].ClientID != DefaultAntigravityClientID {
+	if cfg.Profiles[0].Kind != "antigravity" || cfg.Profiles[0].ProviderID != "antigravity" || cfg.Profiles[0].ClientID != "test-client-id" || cfg.Profiles[0].ClientSecret != "test-client-secret" {
 		t.Fatalf("profile[0]=%#v", cfg.Profiles[0])
 	}
 }

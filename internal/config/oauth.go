@@ -9,16 +9,16 @@ import (
 )
 
 const (
-	DefaultCodexClientID       = "app_EMoamEEZ73f0CkXaXp7hrann"
-	DefaultClaudeClientID      = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	DefaultGitHubClientID      = "Iv1.b507a08c87ecfe81"
-	DefaultAntigravityClientID = "REMOVED_GOOGLE_OAUTH_CLIENT_ID"
+	DefaultCodexClientID  = "app_EMoamEEZ73f0CkXaXp7hrann"
+	DefaultClaudeClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	DefaultGitHubClientID = "Iv1.b507a08c87ecfe81"
 )
 
 type OAuthProfile struct {
 	Kind                   string            `json:"kind,omitempty"`
 	ProviderID             string            `json:"provider_id"`
 	ClientID               string            `json:"client_id"`
+	ClientSecret           string            `json:"client_secret,omitempty"`
 	AuthorizationURL       string            `json:"authorization_url,omitempty"`
 	TokenURL               string            `json:"token_url,omitempty"`
 	DeviceAuthorizationURL string            `json:"device_authorization_url,omitempty"`
@@ -27,23 +27,25 @@ type OAuthProfile struct {
 }
 
 type OAuth struct {
-	PublicBaseURL       string
-	GeminiClientID      string
-	CodexClientID       string
-	ClaudeClientID      string
-	GitHubClientID      string
-	AntigravityClientID string
-	Profiles            []OAuthProfile
+	PublicBaseURL           string
+	GeminiClientID          string
+	CodexClientID           string
+	ClaudeClientID          string
+	GitHubClientID          string
+	AntigravityClientID     string
+	AntigravityClientSecret string
+	Profiles                []OAuthProfile
 }
 
 func LoadOAuth() (OAuth, bool, error) {
 	cfg := OAuth{
-		PublicBaseURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL")), "/"),
-		GeminiClientID:      strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID")),
-		CodexClientID:       strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID")),
-		ClaudeClientID:      strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CLAUDE_CLIENT_ID")),
-		GitHubClientID:      strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GITHUB_CLIENT_ID")),
-		AntigravityClientID: strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_ANTIGRAVITY_CLIENT_ID")),
+		PublicBaseURL:           strings.TrimRight(strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL")), "/"),
+		GeminiClientID:          strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID")),
+		CodexClientID:           strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID")),
+		ClaudeClientID:          strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CLAUDE_CLIENT_ID")),
+		GitHubClientID:          strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GITHUB_CLIENT_ID")),
+		AntigravityClientID:     strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_ANTIGRAVITY_CLIENT_ID")),
+		AntigravityClientSecret: strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_ANTIGRAVITY_CLIENT_SECRET")),
 	}
 	if cfg.CodexClientID == "default" || cfg.CodexClientID == "true" {
 		cfg.CodexClientID = DefaultCodexClientID
@@ -53,9 +55,6 @@ func LoadOAuth() (OAuth, bool, error) {
 	}
 	if cfg.GitHubClientID == "default" || cfg.GitHubClientID == "true" {
 		cfg.GitHubClientID = DefaultGitHubClientID
-	}
-	if cfg.AntigravityClientID == "default" || cfg.AntigravityClientID == "true" {
-		cfg.AntigravityClientID = DefaultAntigravityClientID
 	}
 	if raw := strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_PROFILES_JSON")); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &cfg.Profiles); err != nil {
@@ -69,6 +68,7 @@ func LoadOAuth() (OAuth, bool, error) {
 			}
 			profile.ProviderID = strings.TrimSpace(profile.ProviderID)
 			profile.ClientID = strings.TrimSpace(profile.ClientID)
+			profile.ClientSecret = strings.TrimSpace(profile.ClientSecret)
 			profile.AuthorizationURL = strings.TrimSpace(profile.AuthorizationURL)
 			profile.TokenURL = strings.TrimSpace(profile.TokenURL)
 			profile.DeviceAuthorizationURL = strings.TrimSpace(profile.DeviceAuthorizationURL)
@@ -100,8 +100,8 @@ func LoadOAuth() (OAuth, bool, error) {
 				}
 			}
 			if profile.Kind == "antigravity" || profile.Kind == "agy" {
-				if profile.ClientID == "" || profile.ClientID == "default" || profile.ClientID == "public" {
-					profile.ClientID = DefaultAntigravityClientID
+				if profile.ClientID == "default" || profile.ClientID == "public" {
+					profile.ClientID = ""
 				}
 				if profile.ProviderID == "" {
 					profile.ProviderID = "antigravity"

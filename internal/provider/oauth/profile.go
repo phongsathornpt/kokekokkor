@@ -23,9 +23,6 @@ const (
 	GitHubDeviceAuthorizationURL = "https://github.com/login/device/code"
 	GitHubTokenURL               = "https://github.com/login/oauth/access_token"
 	GitHubCopilotClientID        = "Iv1.b507a08c87ecfe81"
-
-	AntigravityClientID     = "REMOVED_GOOGLE_OAUTH_CLIENT_ID"
-	AntigravityClientSecret = "REMOVED_GOOGLE_OAUTH_CLIENT_SECRET"
 )
 
 type ProfileOptions struct {
@@ -215,12 +212,9 @@ func GitHubCopilotProfile(options ProfileOptions) (domainoauth.Provider, error) 
 
 func AntigravityProfile(options ProfileOptions) (domainoauth.Provider, error) {
 	clientID := strings.TrimSpace(options.ClientID)
-	if clientID == "" || clientID == "default" || clientID == "public" {
-		clientID = AntigravityClientID
-	}
 	clientSecret := strings.TrimSpace(options.ClientSecret)
-	if clientSecret == "" {
-		clientSecret = AntigravityClientSecret
+	if clientID == "" {
+		return domainoauth.Provider{}, fmt.Errorf("Antigravity OAuth client ID must be configured")
 	}
 	defaults := ProfileOptions{
 		ProviderID:       "antigravity",
@@ -246,6 +240,9 @@ func AntigravityProfile(options ProfileOptions) (domainoauth.Provider, error) {
 	}
 	if value := strings.TrimSpace(options.TokenURL); value != "" {
 		defaults.TokenURL = value
+	}
+	if value := strings.TrimSpace(options.ClientSecret); value != "" {
+		defaults.ClientSecret = value
 	}
 	if len(options.Scopes) != 0 {
 		defaults.Scopes = append([]string(nil), options.Scopes...)

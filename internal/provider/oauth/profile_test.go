@@ -171,14 +171,14 @@ func TestGitHubCopilotProfile(t *testing.T) {
 }
 
 func TestAntigravityProfile(t *testing.T) {
-	profile, err := AntigravityProfile(ProfileOptions{})
+	profile, err := AntigravityProfile(ProfileOptions{ClientID: "test-client-id", ClientSecret: "test-client-secret"})
 	if err != nil {
 		t.Fatalf("AntigravityProfile() error = %v", err)
 	}
 	if profile.ID != "antigravity" {
 		t.Fatalf("profile.ID = %q, want %q", profile.ID, "antigravity")
 	}
-	if profile.ClientID != AntigravityClientID || profile.ClientSecret != AntigravityClientSecret {
+	if profile.ClientID != "test-client-id" || profile.ClientSecret != "test-client-secret" {
 		t.Fatalf("profile credentials = (%q, %q)", profile.ClientID, profile.ClientSecret)
 	}
 	if profile.AuthorizationURL != GoogleAuthorizationURL || profile.TokenURL != GoogleTokenURL {

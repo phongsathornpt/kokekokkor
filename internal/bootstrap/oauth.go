@@ -138,8 +138,9 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 	if oauthConfig.AntigravityClientID != "" {
 		providerID := defaultAntigravityProviderID(cfg, snapshot)
 		profile, err := provideroauth.AntigravityProfile(provideroauth.ProfileOptions{
-			ProviderID: providerID,
-			ClientID:   oauthConfig.AntigravityClientID,
+			ProviderID:   providerID,
+			ClientID:     oauthConfig.AntigravityClientID,
+			ClientSecret: oauthConfig.AntigravityClientSecret,
 		})
 		if err != nil {
 			return oauthRuntime{}, err
@@ -152,6 +153,7 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 		options := provideroauth.ProfileOptions{
 			ProviderID:             configuredProfile.ProviderID,
 			ClientID:               configuredProfile.ClientID,
+			ClientSecret:           configuredProfile.ClientSecret,
 			Scopes:                 configuredProfile.Scopes,
 			AuthorizationURL:       configuredProfile.AuthorizationURL,
 			TokenURL:               configuredProfile.TokenURL,
