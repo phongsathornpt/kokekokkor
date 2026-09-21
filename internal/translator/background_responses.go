@@ -171,4 +171,3 @@ func newGatewayResponseID() (string, error) {
 	}
 	return "resp_gateway_" + hex.EncodeToString(raw[:]), nil
 }
-
