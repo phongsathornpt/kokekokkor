@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -86,12 +85,16 @@ func (r *Runtime) runBackgroundResponses(ctx context.Context, id string, plan re
 
 	r.setBackgroundStatus(id, "in_progress", "")
 
-	_, response, err := work(ctx)
+	upstreamResponse, response, err := work(ctx)
 	if ctx.Err() != nil {
 		return
 	}
 	if err != nil {
 		r.setBackgroundStatus(id, "failed", err.Error())
+		return
+	}
+	if upstreamResponse.StatusCode < 200 || upstreamResponse.StatusCode >= 300 {
+		r.setBackgroundStatus(id, "failed", upstream.ErrorMessage(upstreamResponse.Body, upstreamResponse.StatusCode))
 		return
 	}
 
@@ -167,6 +170,3 @@ func newGatewayResponseID() (string, error) {
 	return "resp_gateway_" + hex.EncodeToString(raw[:]), nil
 }
 
-func isBackgroundCancellation(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-}
