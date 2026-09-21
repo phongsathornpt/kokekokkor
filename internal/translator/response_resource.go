@@ -12,10 +12,31 @@ import (
 
 func (r *Runtime) HandleStoredResponse(ctx context.Context, method, path string) (int, []byte, bool, error) {
 	trimmed := strings.TrimPrefix(path, "/v1/responses/")
-	if trimmed == path || trimmed == "" || strings.Contains(trimmed, "/") {
+	if trimmed == path || trimmed == "" {
 		return 0, nil, false, nil
 	}
 	if trimmed == "compact" {
+		return 0, nil, false, nil
+	}
+	if strings.HasSuffix(trimmed, "/cancel") {
+		id := strings.TrimSuffix(trimmed, "/cancel")
+		if id == "" || strings.Contains(id, "/") || method != http.MethodPost {
+			return 0, nil, false, nil
+		}
+		cancelled, err := r.cancelBackgroundResponse(ctx, id)
+		if err != nil {
+			return 0, nil, true, err
+		}
+		if !cancelled {
+			return 0, nil, false, nil
+		}
+		record, err := r.responseState.LoadResponse(ctx, id)
+		if err != nil {
+			return 0, nil, true, err
+		}
+		return http.StatusOK, append([]byte(nil), record.Payload...), true, nil
+	}
+	if strings.Contains(trimmed, "/") {
 		return 0, nil, false, nil
 	}
 	switch method {
