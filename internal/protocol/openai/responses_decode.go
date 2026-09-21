@@ -414,5 +414,11 @@ func decodeResponsesState(wire responsesRequest) (*llm.ResponseState, error) {
 	if state.PreviousResponseID != "" && state.ConversationID != "" {
 		return nil, fmt.Errorf("Responses previous_response_id cannot be used with conversation")
 	}
+	if state.Background && wire.Stream {
+		return nil, fmt.Errorf("Responses background mode cannot be combined with stream=true")
+	}
+	if state.Background && !state.Store {
+		return nil, fmt.Errorf("Responses background mode requires store=true")
+	}
 	return state, nil
 }
