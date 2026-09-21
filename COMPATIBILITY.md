@@ -85,6 +85,8 @@ Exact-refusal buffering is bounded to 8 MiB or 8,192 canonical events per respon
 
 Compatibility errors detected before the upstream call may advance to the next configured route target. Transport failures and retryable pre-commit statuses may also fall through. Once native or translated bytes have been committed downstream, the selected route is final; kokekokkor does not replay a generation after partial delivery.
 
+For translated `background:true` Responses, returning the queued response commits the selected route. Any later asynchronous upstream or translation failure is persisted as a `failed` response under the same gateway response ID rather than replayed against another provider.
+
 ## Validation gates
 
 Pull requests are required to pass:
