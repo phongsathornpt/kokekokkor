@@ -153,12 +153,16 @@ func (r *Runtime) persistResponsesState(ctx context.Context, plan responseStateP
 	if response.StopReason == llm.StopReasonMaxTokens {
 		status = "incomplete"
 	}
+	retention := responsestate.DefaultRetention
+	if plan.state.Background {
+		retention = responsestate.BackgroundRetention
+	}
 	return r.responseState.SaveResponse(ctx, response.ID, responsestate.Record{
 		Messages:    history,
 		Continuable: continuable,
 		Payload:     payload,
 		Status:      status,
-		ExpiresAt:   time.Now().Add(responsestate.DefaultRetention),
+		ExpiresAt:   time.Now().Add(retention),
 	})
 }
 
