@@ -1,16 +1,22 @@
 package web
 
-func providerTagClass(protocol string) string {
-	switch protocol {
-	case "openai":
-		return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-	case "anthropic":
-		return "bg-orange-500/10 text-orange-400 border-orange-500/20"
-	case "gemini":
-		return "bg-sky-500/10 text-sky-400 border-sky-500/20"
-	default:
-		return "bg-gray-500/10 text-gray-300 border-gray-500/20"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// joinClass appends optional caller-supplied classes to a shared base.
+// Every fragment stays a literal so Tailwind can detect it while scanning.
+func joinClass(base string, extra ...string) string {
+	parts := make([]string, 0, len(extra)+1)
+	parts = append(parts, base)
+	for _, e := range extra {
+		if e != "" {
+			parts = append(parts, e)
+		}
 	}
+	return strings.Join(parts, " ")
 }
 
 func targetPlural(n int) string {
@@ -20,15 +26,396 @@ func targetPlural(n int) string {
 	return ""
 }
 
+// protocolTextClass assigns each wire protocol its identity color.
+func protocolTextClass(protocol string) string {
+	switch protocol {
+	case "openai":
+		return "text-openai"
+	case "anthropic":
+		return "text-anthropic"
+	case "gemini":
+		return "text-gemini"
+	default:
+		return "text-ink-3"
+	}
+}
+
+// ProtocolIcon maps a wire protocol to its mark and its identity color.
+templ ProtocolIcon(protocol string, size string) {
+	switch protocol {
+		case "openai":
+			@IconOpenAI(size + " text-openai")
+		case "anthropic":
+			@IconAnthropic(size + " text-anthropic")
+		case "gemini":
+			@IconGemini(size + " text-gemini")
+		default:
+			@IconServer(size + " text-ink-3")
+	}
+}
+
+// ProtocolCell is a protocol's mark plus its literal name.
+templ ProtocolCell(protocol string) {
+	<span class="inline-flex items-center gap-2">
+		@ProtocolIcon(protocol, "w-3.5 h-3.5")
+		<span class="ident text-ink-2">{ protocol }</span>
+	</span>
+}
+
+// CredentialCell reports credential state without ever rendering a secret.
+templ CredentialCell(p ProviderView, csrf string) {
+	<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px]">
+		if p.APIKey {
+			<span class="inline-flex items-center gap-1.5 text-ink-2">
+				<span class="w-1.5 h-1.5 rounded-flat bg-ok"></span>
+				key configured
+			</span>
+		} else {
+			<span class="inline-flex items-center gap-1.5 text-ink-3">
+				<span class="w-1.5 h-1.5 rounded-flat bg-ink-3"></span>
+				key absent
+			</span>
+		}
+		if p.OAuthConnected {
+			<span class="inline-flex items-center gap-1.5 text-ink-2">
+				<span class="w-1.5 h-1.5 rounded-flat bg-ok"></span>
+				oauth connected
+			</span>
+			<form hx-delete={ "/admin/oauth/" + p.ID } hx-include="closest form">
+				<input type="hidden" name="csrf_token" value={ csrf }/>
+				<button type="submit" class="btn-link-danger">Disconnect OAuth</button>
+			</form>
+		} else if p.OAuthAvailable {
+			<span class="inline-flex items-center gap-1.5 text-ink-3">
+				<span class="w-1.5 h-1.5 rounded-flat bg-warn"></span>
+				oauth not connected
+			</span>
+			<a href={ templ.SafeURL("/oauth/" + p.ID + "/start") } class="btn-link">Connect OAuth</a>
+		} else {
+			<span class="inline-flex items-center gap-1.5 text-ink-3">
+				<span class="w-1.5 h-1.5 rounded-flat bg-rule-2"></span>
+				oauth unavailable
+			</span>
+		}
+	</div>
+}
+
+// StateCell states whether a provider is taking traffic. No motion, no fill.
+templ StateCell(enabled bool) {
+	if enabled {
+		<span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-ok">
+			<span class="w-1.5 h-1.5 rounded-flat bg-ok"></span>
+			enabled
+		</span>
+	} else {
+		<span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-ink-3">
+			<span class="w-1.5 h-1.5 rounded-flat bg-ink-3"></span>
+			disabled
+		</span>
+	}
+}
+
+// Hops draws an ordered fallback chain as a directional rail.
+templ Hops(targets []string) {
+	<ol class="hops">
+		for i, target := range targets {
+			<li>
+				<span class="hop">{ fmt.Sprintf("%02d", i+1) }</span>
+				<span class="tag">{ target }</span>
+			</li>
+		}
+	</ol>
+}
+
+// ValueChip is a read-only literal, such as the upstream bound to a protocol default.
+templ ValueChip(value string) {
+	<span class="tag">
+		if value != "" {
+			{ value }
+		} else {
+			<span class="text-ink-3">none</span>
+		}
+	</span>
+}
+
+// PageTitle is the hook of every page: one heading, one lede, one rule.
+templ PageTitle(title string, lede string) {
+	<div class="pb-5 border-b border-rule">
+		<h1 class="page-title">{ title }</h1>
+		if lede != "" {
+			<p class="page-lede mt-2">{ lede }</p>
+		}
+	</div>
+}
+
+// Vital is one readout in the overview's vitals rail.
+templ Vital(label string, value string, hint string) {
+	<div class="px-5 py-4">
+		<div class="eyebrow">{ label }</div>
+		<div class="num mt-2 text-[15px] font-semibold text-ink">{ value }</div>
+		<div class="mt-1 text-[11px] text-ink-3">{ hint }</div>
+	</div>
+}
+
+// EmptyState teaches the space and points at the action that fills it.
+templ EmptyState(title string, body string, href string, action string) {
+	<div class="flex flex-col items-center gap-2 px-6 py-12 text-center">
+		<p class="text-xs font-semibold text-ink-2">{ title }</p>
+		<p class="max-w-md text-[11px] text-ink-3">{ body }</p>
+		if href != "" {
+			<a href={ templ.SafeURL(href) } onclick="var d=document.getElementById('add-provider-dialog');if(d){d.showModal();return false;}" class="btn btn-quiet mt-2">{ action }</a>
+		}
+	</div>
+}
+
+func boolInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+// providerColumnCount matches the header cells rendered for the provider ledger,
+// so the configuration row can span exactly the right number.
+func providerColumnCount(data DashboardData) int {
+	return 5 + boolInt(data.Editable)
+}
+
+// ProviderLedger is the single definition of the provider scan lane, shared by
+// the overview and the providers page so column order can never drift.
+// full adds row actions and inline configuration; the overview uses the read-only form.
+templ ProviderLedger(data DashboardData, full bool) {
+	<div class="ledger-wrap">
+		<table class="ledger">
+			<thead>
+				<tr>
+					<th>Provider</th>
+					<th>Protocol</th>
+					<th>Credentials</th>
+					<th>State</th>
+					<th>Endpoint</th>
+					if full && data.Editable {
+						<th class="text-end">Actions</th>
+					}
+				</tr>
+			</thead>
+			<tbody>
+				for _, p := range data.Providers {
+					<tr>
+						<td>
+							<span class="ident font-medium text-ink">{ p.ID }</span>
+						</td>
+						<td>@ProtocolCell(p.Protocol)</td>
+						<td>@CredentialCell(p, data.CSRF)</td>
+						<td>@StateCell(p.Enabled)</td>
+						<td>
+							<span class="ident text-ink-3">{ p.BaseURL }</span>
+						</td>
+						if full && data.Editable {
+							<td class="text-end">
+								<form class="inline-flex" method="post" action="/admin/providers/toggle" hx-post="/admin/providers/toggle">
+									<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+									<input type="hidden" name="provider_id" value={ p.ID }/>
+									<input type="hidden" name="enabled" value={ strconv.FormatBool(!p.Enabled) }/>
+									<button type="submit" class="btn btn-quiet">
+										@IconPower("w-3 h-3")
+										if p.Enabled {
+											Disable
+										} else {
+											Enable
+										}
+									</button>
+								</form>
+							</td>
+						}
+					</tr>
+					if full && (data.Editable || data.CredentialEditable) {
+						<tr class="config-row">
+							<td colspan={ strconv.Itoa(providerColumnCount(data)) }>
+								<details>
+									<summary>
+										@IconSliders("w-3 h-3")
+										<span>Manage { p.ID }</span>
+									</summary>
+									<div class="mt-5 grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
+										if data.Editable {
+											<form class="flex flex-col gap-3" method="post" action="/admin/providers/update" hx-post="/admin/providers/update">
+												<div class="eyebrow">Provider settings</div>
+												<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+												<input type="hidden" name="provider_id" value={ p.ID }/>
+												<div>
+													<label for={ "edit-protocol-" + p.ID }>Protocol</label>
+													<select id={ "edit-protocol-" + p.ID } name="protocol" required class="w-full">
+														<option value="openai" selected?={ p.Protocol == "openai" }>openai</option>
+														<option value="anthropic" selected?={ p.Protocol == "anthropic" }>anthropic</option>
+														<option value="gemini" selected?={ p.Protocol == "gemini" }>gemini</option>
+													</select>
+												</div>
+												<div>
+													<label for={ "edit-baseurl-" + p.ID }>Base URL</label>
+													<input id={ "edit-baseurl-" + p.ID } name="base_url" value={ p.BaseURL } required class="w-full"/>
+												</div>
+												<div>
+													<label for={ "edit-enabled-" + p.ID }>Status</label>
+													<select id={ "edit-enabled-" + p.ID } name="enabled" class="w-full">
+														<option value="true" selected?={ p.Enabled }>enabled</option>
+														<option value="false" selected?={ !p.Enabled }>disabled</option>
+													</select>
+												</div>
+												<div>
+													<button type="submit" class="btn btn-quiet">
+														@IconSave("w-3.5 h-3.5")
+														Save provider
+													</button>
+												</div>
+											</form>
+										}
+										if data.CredentialEditable {
+											<div class="flex flex-col gap-3">
+												<div class="eyebrow">Credentials</div>
+												<form class="flex flex-col gap-3" method="post" action="/admin/credentials/api-key" hx-post="/admin/credentials/api-key">
+													<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+													<input type="hidden" name="provider_id" value={ p.ID }/>
+													<div>
+														<label for={ "api-key-" + p.ID }>API key</label>
+														<input id={ "api-key-" + p.ID } type="password" name="api_key" placeholder="replace API key" autocomplete="new-password" required class="w-full"/>
+													</div>
+													<div>
+														<button type="submit" class="btn btn-quiet">
+															@IconSave("w-3.5 h-3.5")
+															Save key
+														</button>
+													</div>
+												</form>
+												if p.APIKey {
+													<form method="post" action="/admin/credentials/api-key/delete" hx-post="/admin/credentials/api-key/delete" hx-confirm={ fmt.Sprintf("Remove API key for %s?", p.ID) }>
+														<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+														<input type="hidden" name="provider_id" value={ p.ID }/>
+														<button type="submit" class="btn btn-danger">
+															@IconTrash("w-3 h-3")
+															Remove API key
+														</button>
+													</form>
+												}
+											</div>
+										}
+										if data.Editable {
+											<div class="flex flex-col gap-3">
+												<div class="eyebrow">Remove</div>
+												<p class="text-[11px] text-ink-3">Defaults and routes must be cleared before a provider can be deleted.</p>
+												<form method="post" action="/admin/providers/delete" hx-post="/admin/providers/delete" hx-confirm={ fmt.Sprintf("Delete provider %s? Defaults and routes must be cleared first.", p.ID) }>
+													<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+													<input type="hidden" name="provider_id" value={ p.ID }/>
+													<button type="submit" class="btn btn-danger">
+														@IconTrash("w-3 h-3")
+														Delete provider
+													</button>
+												</form>
+											</div>
+										}
+									</div>
+								</details>
+							</td>
+						</tr>
+					}
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+// RouteLedger is the single definition of the alias-to-chain scan lane.
+// The chain column is last so the ordered rail absorbs the table's slack.
+templ RouteLedger(data DashboardData, full bool) {
+	<div class="ledger-wrap">
+		<table class="ledger">
+			<thead>
+				<tr>
+					<th>Model alias</th>
+					<th>Fallback chain</th>
+					if full && data.Editable {
+						<th class="text-end">Actions</th>
+					}
+				</tr>
+			</thead>
+			<tbody>
+				for _, r := range data.Routes {
+					<tr>
+						<td>
+							<span class="ident font-medium text-ink">{ r.Model }</span>
+						</td>
+						<td>@Hops(r.Targets)</td>
+						if full && data.Editable {
+							<td class="text-end">
+								<form class="inline-flex" method="post" action="/admin/routes/delete" hx-post="/admin/routes/delete" hx-confirm={ fmt.Sprintf("Delete route %s?", r.Model) }>
+									<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+									<input type="hidden" name="model" value={ r.Model }/>
+									<button type="submit" class="btn btn-danger">
+										@IconTrash("w-3 h-3")
+										Delete
+									</button>
+								</form>
+							</td>
+						}
+					</tr>
+					if full && data.Editable {
+						<tr class="config-row">
+							<td colspan="3">
+								<details>
+									<summary>
+										@IconRoute("w-3 h-3")
+										<span>Edit chain for { r.Model }</span>
+									</summary>
+									<div class="mt-5 flex max-w-2xl flex-col gap-6">
+										<form class="flex flex-col gap-3" method="post" action="/admin/routes" hx-post="/admin/routes">
+											<div class="eyebrow">Ordered attempts</div>
+											<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+											<input type="hidden" name="model" value={ r.Model }/>
+											<div>
+												<label for={ "route-targets-" + r.Model }>Target chain</label>
+												<input id={ "route-targets-" + r.Model } name="targets" value={ r.TargetSpec } required class="w-full"/>
+												<p class="mt-1.5 text-[11px] text-ink-3">
+													Comma separated. Each hop is <code class="ident text-ink-2">provider</code> or <code class="ident text-ink-2">provider:upstream-model</code>.
+												</p>
+											</div>
+											<div>
+												<button type="submit" class="btn btn-quiet">
+													@IconSave("w-3.5 h-3.5")
+													Apply
+												</button>
+											</div>
+										</form>
+										<form class="flex flex-col gap-3" method="post" action="/admin/routes/delete" hx-post="/admin/routes/delete" hx-confirm={ fmt.Sprintf("Delete route %s?", r.Model) }>
+											<div class="eyebrow">Remove</div>
+											<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+											<input type="hidden" name="model" value={ r.Model }/>
+											<button type="submit" class="btn btn-danger">
+												@IconTrash("w-3 h-3")
+												Delete
+											</button>
+										</form>
+									</div>
+								</details>
+							</td>
+						</tr>
+					}
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
 templ AdminShell(title string, data DashboardData) {
 	@Layout(title) {
 		<div class="flex min-h-screen w-full">
 			@Sidebar(data)
-			<main class="flex-1 min-w-0 p-6 md:p-8 lg:p-10 max-w-7xl">
-				<!-- Alert Banner for HTMX feedback -->
-				<div id="alert-banner" role="alert" aria-live="polite"></div>
-				{ children... }
-			</main>
+			<div class="flex flex-1 flex-col min-w-0">
+				<main class="mx-auto w-full max-w-[1480px] flex-1 px-6 py-8 lg:px-10">
+					<div id="alert-banner" role="alert" aria-live="polite"></div>
+					{ children... }
+				</main>
+				@Footer()
+			</div>
 		</div>
 	}
 }

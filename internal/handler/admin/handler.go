@@ -191,7 +191,8 @@ func (h *Handler) createProvider(w http.ResponseWriter, r *http.Request) {
 		mutationError(w, http.StatusConflict, "catalog editing requires SQLite persistence")
 		return
 	}
-	item, err := providerFromForm(r, r.FormValue("provider_id"))
+	providerID := strings.TrimSpace(r.FormValue("provider_id"))
+	item, err := providerFromForm(r, providerID)
 	if err != nil {
 		mutationError(w, http.StatusBadRequest, err.Error())
 		return
@@ -199,6 +200,14 @@ func (h *Handler) createProvider(w http.ResponseWriter, r *http.Request) {
 	if err := h.catalog.CreateProvider(r.Context(), item); err != nil {
 		mutationError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	apiKey := strings.TrimSpace(r.FormValue("api_key"))
+	if apiKey != "" && h.credentials != nil && h.credentials.Editable() {
+		if err := h.credentials.SetAPIKey(r.Context(), providerID, apiKey); err != nil {
+			_ = h.catalog.DeleteProvider(r.Context(), providerID)
+			mutationError(w, http.StatusBadRequest, fmt.Sprintf("failed to save API key: %v", err))
+			return
+		}
 	}
 	mutationOK(w)
 }

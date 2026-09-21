@@ -6,12 +6,13 @@ templ Layout(title string) {
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width,initial-scale=1"/>
-			<meta name="htmx-config" content='{"responseHandling":[{"status":"*", "swap": true}]}'/>
+			<meta name="theme-color" content="oklch(0.149 0.005 264)"/>
+			<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='oklch(0.735%200.112%20210)' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='18' cy='5' r='3'/%3E%3Ccircle cx='6' cy='12' r='3'/%3E%3Ccircle cx='18' cy='19' r='3'/%3E%3Cpath d='M8.59 13.51 15.42 17.49M15.41 6.51 8.59 10.49'/%3E%3C/svg%3E"/>
 			<title>{ title }</title>
-			<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js" integrity="sha384-H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V" crossorigin="anonymous"></script>
+			<script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0/dist/htmx.min.js" integrity="sha384-BvJpBiO8Kh31EqtJe5DRIeWrHWnCGkwytKs9NKFi86Hhw96dEqdEMzZDeK9iEGTc" crossorigin="anonymous" defer></script>
 			@templ.Raw("<style>" + TailwindCSS + "</style>")
 		</head>
-		<body class="bg-[#090a0f] text-[#f3f4f6] min-h-screen antialiased selection:bg-[#6366f1]/30 selection:text-white">
+		<body>
 			{ children... }
 		</body>
 	</html>

@@ -4,82 +4,143 @@ import "strconv"
 
 func navLinkClass(active bool) string {
 	if active {
-		return "bg-indigo-600/15 text-indigo-300 font-semibold border border-indigo-500/30 shadow-sm"
+		return "bg-plane border-rule-2 text-ink font-semibold shadow-xs"
 	}
-	return "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
+	return "text-ink-3 hover:text-ink-2 hover:bg-plane/50 border-transparent"
 }
 
 func navIconClass(active bool) string {
 	if active {
-		return "w-4 h-4 text-indigo-400"
+		return "w-4 h-4 text-signal shrink-0"
 	}
-	return "w-4 h-4 text-gray-400"
+	return "w-4 h-4 text-ink-3 shrink-0"
+}
+
+func navBadgeClass(active bool) string {
+	if active {
+		return "text-signal border-signal/30 bg-signal/10"
+	}
+	return "text-ink-3 border-rule-2 bg-plane-2"
+}
+
+// routingConfigured mirrors the gateway's readiness contract: at least one
+// protocol default is bound, or an exact model route exists.
+func routingConfigured(data DashboardData) bool {
+	for _, def := range data.Defaults {
+		if def.ProviderID != "" {
+			return true
+		}
+	}
+	return len(data.Routes) > 0
+}
+
+// Readiness replaces the old decorative heartbeat with state derived from the
+// catalog being rendered. Nothing here is fabricated.
+templ Readiness(data DashboardData) {
+	if routingConfigured(data) {
+		<span class="inline-flex items-center gap-2 text-[11px] font-medium text-ok" title="At least one protocol default or model route is configured">
+			<span class="w-1.5 h-1.5 rounded-flat bg-ok"></span>
+			ready
+		</span>
+	} else {
+		<span class="inline-flex items-center gap-2 text-[11px] font-medium text-warn" title="No protocol default is bound and no model route exists">
+			<span class="w-1.5 h-1.5 rounded-flat bg-warn"></span>
+			unrouted
+		</span>
+	}
 }
 
 templ Sidebar(data DashboardData) {
-	<aside class="w-64 min-w-[16rem] bg-[#090b11] border-r border-[#1a1d25] flex flex-col sticky top-0 h-screen p-5 z-50 shrink-0">
-		<div class="flex items-center gap-3 pb-4 mb-3 border-b border-[#1a1d25]">
-			<div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-400 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25 shrink-0">
-				@IconLogo("w-5 h-5")
-			</div>
-			<div class="flex flex-col min-w-0">
-				<div class="flex items-center gap-1.5">
-					<span class="text-sm font-bold tracking-tight text-white">kokekokkor</span>
-					<span class="text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded-full">v1.27</span>
+	<aside class="w-64 min-w-[16rem] bg-well border-r border-rule flex flex-col sticky top-0 h-screen p-5 z-50 shrink-0">
+		<!-- Brand Header -->
+		<div class="flex items-center gap-3 pb-4 mb-3 border-b border-rule">
+			<a href="/admin" class="flex items-center gap-2.5 min-w-0">
+				<span class="grid h-7 w-7 place-items-center rounded-flat border border-rule-2 bg-plane text-signal shrink-0">
+					@IconLogo("w-3.5 h-3.5")
+				</span>
+				<div class="flex flex-col min-w-0 leading-none">
+					<div class="flex items-center gap-1.5">
+						<span class="ident font-semibold tracking-tight text-ink text-sm">kokekokkor</span>
+						<span class="tag text-[10px]">v1.27</span>
+					</div>
+					<span class="eyebrow mt-1 text-ink-3 truncate">Gateway administration</span>
 				</div>
-				<span class="text-[11px] text-gray-400 truncate leading-tight">Gateway administration · secrets are never rendered</span>
-			</div>
+			</a>
 		</div>
 
-		<nav class="flex-1 flex flex-col gap-1 overflow-y-auto pr-1" hx-boost="true">
-			<div class="text-[10px] font-bold uppercase tracking-wider text-gray-500 mt-2 mb-1 px-2">Gateway Core</div>
-			<a href="/admin" class={ "flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-all", navLinkClass(data.ActivePage == PageOverview || data.ActivePage == "") }>
+		<!-- Navigation Menu -->
+		<nav class="flex-1 flex flex-col gap-1 overflow-y-auto pr-1" hx-boost:inherited="true">
+			<div class="eyebrow mt-2 mb-1 px-2">Gateway Core</div>
+
+			<a href="/admin" class={ joinClass("group flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-flat border transition-colors", navLinkClass(data.ActivePage == PageOverview || data.ActivePage == "")) }>
 				@IconCube(navIconClass(data.ActivePage == PageOverview || data.ActivePage == ""))
 				<span>Overview</span>
 			</a>
-			<a href="/admin/providers" class={ "flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-all", navLinkClass(data.ActivePage == PageProviders) }>
+
+			<a href="/admin/providers" class={ joinClass("group flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-flat border transition-colors", navLinkClass(data.ActivePage == PageProviders)) }>
 				@IconServer(navIconClass(data.ActivePage == PageProviders))
 				<span>Providers</span>
-				<span class="ml-auto text-[11px] font-semibold bg-[#191c26] text-gray-400 px-2 py-0.5 rounded-full border border-[#262933]">{ strconv.Itoa(len(data.Providers)) }</span>
+				<span class={ joinClass("ml-auto tag text-[10px]", navBadgeClass(data.ActivePage == PageProviders)) }>
+					{ strconv.Itoa(len(data.Providers)) }
+				</span>
 			</a>
-			<a href="/admin/defaults" class={ "flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-all", navLinkClass(data.ActivePage == PageDefaults) }>
+
+			<a href="/admin/defaults" class={ joinClass("group flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-flat border transition-colors", navLinkClass(data.ActivePage == PageDefaults)) }>
 				@IconSliders(navIconClass(data.ActivePage == PageDefaults))
 				<span>Protocol Defaults</span>
 			</a>
-			<a href="/admin/routes" class={ "flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-all", navLinkClass(data.ActivePage == PageRoutes) }>
+
+			<a href="/admin/routes" class={ joinClass("group flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-flat border transition-colors", navLinkClass(data.ActivePage == PageRoutes)) }>
 				@IconRoute(navIconClass(data.ActivePage == PageRoutes))
 				<span>Model Routes</span>
-				<span class="ml-auto text-[11px] font-semibold bg-[#191c26] text-gray-400 px-2 py-0.5 rounded-full border border-[#262933]">{ strconv.Itoa(len(data.Routes)) }</span>
+				<span class={ joinClass("ml-auto tag text-[10px]", navBadgeClass(data.ActivePage == PageRoutes)) }>
+					{ strconv.Itoa(len(data.Routes)) }
+				</span>
 			</a>
 
-			<div class="text-[10px] font-bold uppercase tracking-wider text-gray-500 mt-5 mb-1 px-2">Security & Storage</div>
-			<div class="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-gray-400 cursor-default rounded-lg">
-				@IconShieldCheck("w-4 h-4 text-emerald-400")
+			<div class="eyebrow mt-6 mb-1 px-2">Security & Storage</div>
+
+			<div class="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-ink-3 cursor-default rounded-flat">
+				@IconShieldCheck("w-4 h-4 text-ok shrink-0")
 				<span>AES-256 Vault</span>
-				<span class="ml-auto text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">Sealed</span>
+				<span class="ml-auto tag text-[10px] text-ok border-ok/30 bg-ok/10">Sealed</span>
 			</div>
 		</nav>
 
-		<div class="mt-auto pt-4 border-t border-[#1a1d25] flex flex-col gap-3">
-			<div class="flex items-center gap-2 text-xs font-medium text-gray-300 bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-lg">
-				<span class="pulse-dot"></span>
-				<span>Gateway Active</span>
-				<span class="ml-auto font-mono text-[11px] text-gray-400">:8080</span>
+		<!-- Bottom Status & User Session -->
+		<div class="mt-auto pt-4 border-t border-rule flex flex-col gap-3">
+			<div class="flex items-center justify-between px-3 py-2 rounded-flat bg-plane border border-rule text-xs">
+				<span class="eyebrow">Gateway</span>
+				@Readiness(data)
 			</div>
+
 			<div class="flex items-center justify-between pt-1">
-				<div class="flex items-center gap-2">
-					<div class="w-7 h-7 rounded-lg bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 flex items-center justify-center text-xs font-bold">
+				<div class="flex items-center gap-2 min-w-0">
+					<span class="grid h-6 w-6 place-items-center rounded-flat border border-rule-2 bg-plane-2 text-signal font-mono text-[11px] font-bold shrink-0">
 						A
-					</div>
-					<span class="text-xs font-semibold text-gray-200">admin</span>
+					</span>
+					<span class="ident text-xs font-medium text-ink-2 truncate">admin</span>
 				</div>
 				<form method="post" action="/admin/logout">
 					<input type="hidden" name="csrf_token" value={ data.CSRF }/>
-					<button type="submit" class="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer" title="Sign out">
-						@IconSignOut("w-4 h-4")
+					<button type="submit" class="btn-link text-ink-3 hover:text-bad" title="Sign out">
+						@IconSignOut("w-3.5 h-3.5")
+						<span>Sign out</span>
 					</button>
 				</form>
 			</div>
 		</div>
 	</aside>
+}
+
+templ Footer() {
+	<footer class="mt-16 border-t border-rule">
+		<div class="mx-auto flex w-full max-w-[1480px] flex-wrap items-center justify-between gap-3 px-6 py-5 lg:px-10">
+			<span class="ident text-ink-3">kokekokkor v1.27</span>
+			<span class="inline-flex items-center gap-2 text-[11px] text-ink-3">
+				<span class="w-1.5 h-1.5 rounded-flat bg-ok"></span>
+				AES-256 vault sealed, secrets never rendered
+			</span>
+		</div>
+	</footer>
 }

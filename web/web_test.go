@@ -3,6 +3,7 @@ package web_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -81,15 +82,15 @@ func TestRenderOverview(t *testing.T) {
 		"gemini-oauth",
 		"fast-chat",
 		`id="alert-banner"`,
-		"Upstream Providers",
-		"Active Model Routes",
-		"Protocol Defaults",
+		"Upstream providers",
+		"Active routes",
+		"Protocol defaults",
 		"href=\"/admin/providers\"",
 		"href=\"/admin/defaults\"",
 		"href=\"/admin/routes\"",
 		"<style>",
 		"</style>",
-		"#090a0f",
+		"--color-ground",
 	}
 	for _, substr := range expected {
 		if !strings.Contains(output, substr) {
@@ -116,16 +117,25 @@ func TestRenderProviders(t *testing.T) {
 		"Save provider",
 		"Delete provider",
 		`id="alert-banner"`,
+		`id="add-provider-dialog"`,
+		`id="add-provider-alert"`,
 		`<label for="new-protocol">Protocol</label>`,
-		`<select id="new-protocol" name="protocol" required>`,
+		`id="new-protocol" name="protocol" required`,
 		`<label for="new-base-url">Base URL</label>`,
+		`<label for="new-api-key">API Key (optional)</label>`,
 		`hx-post="/admin/providers/toggle"`,
 		`hx-delete="/admin/oauth/gemini-oauth"`,
+		`hx-include="closest form"`,
+		`hx-boost:inherited="true"`,
+		`htmx.org@4.0.0`,
 	}
 	for _, substr := range expected {
 		if !strings.Contains(output, substr) {
 			t.Errorf("rendered providers missing expected substring: %q", substr)
 		}
+	}
+	if strings.Contains(output, "responseHandling") {
+		t.Error("rendered providers still contains removed htmx v2 responseHandling config")
 	}
 }
 
@@ -139,7 +149,7 @@ func TestRenderDefaults(t *testing.T) {
 	expected := []string{
 		"Gateway administration",
 		"csrf-test-token-12345",
-		"Protocol Defaults",
+		"Protocol defaults",
 		`<label for="default-select-openai">Default provider</label>`,
 		`<label for="default-select-gemini">Default provider</label>`,
 		`hx-post="/admin/defaults"`,
@@ -161,9 +171,9 @@ func TestRenderRoutes(t *testing.T) {
 	expected := []string{
 		"Gateway administration",
 		"csrf-test-token-12345",
-		"Model Routes",
+		"Model routes",
 		"fast-chat",
-		"Fallback Chain",
+		"Fallback chain",
 		"Add route",
 		`hx-post="/admin/routes"`,
 		`hx-post="/admin/routes/delete"`,
@@ -180,10 +190,10 @@ func TestRenderDashboard(t *testing.T) {
 		page     web.PageName
 		expected string
 	}{
-		{web.PageOverview, "Upstream Providers"},
+		{web.PageOverview, "Upstream providers"},
 		{web.PageProviders, "Save provider"},
-		{web.PageDefaults, "Protocol Defaults"},
-		{web.PageRoutes, "Model Routes"},
+		{web.PageDefaults, "Protocol defaults"},
+		{web.PageRoutes, "Model routes"},
 	}
 	for _, p := range pages {
 		data := sampleData()
@@ -195,6 +205,46 @@ func TestRenderDashboard(t *testing.T) {
 		if !strings.Contains(buf.String(), p.expected) {
 			t.Errorf("RenderDashboard(%s) missing %q", p.page, p.expected)
 		}
+	}
+}
+
+func TestAdminSidebarLayoutOnly(t *testing.T) {
+	pages := []struct {
+		name string
+		fn   func(context.Context, io.Writer, web.DashboardData) error
+	}{
+		{"Overview", web.RenderOverview},
+		{"Providers", web.RenderProviders},
+		{"Defaults", web.RenderDefaults},
+		{"Routes", web.RenderRoutes},
+	}
+
+	for _, tc := range pages {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			data := sampleData()
+			if err := tc.fn(context.Background(), &buf, data); err != nil {
+				t.Fatalf("%s render error: %v", tc.name, err)
+			}
+			out := buf.String()
+
+			// Must contain sidebar element
+			if !strings.Contains(out, "<aside") {
+				t.Errorf("%s missing sidebar <aside> tag", tc.name)
+			}
+
+			// Sidebar must contain primary navigation links
+			for _, href := range []string{`href="/admin"`, `href="/admin/providers"`, `href="/admin/defaults"`, `href="/admin/routes"`} {
+				if !strings.Contains(out, href) {
+					t.Errorf("%s missing sidebar navigation link %s", tc.name, href)
+				}
+			}
+
+			// Must not contain top navigation header
+			if strings.Contains(out, "<header") {
+				t.Errorf("%s must not contain a <header> top rail; menu must be sidebar-only", tc.name)
+			}
+		})
 	}
 }
 

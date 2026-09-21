@@ -30,7 +30,7 @@ kokekokkor currently includes:
 - provider API-key auth plus OAuth/PKCE profiles with refreshable persisted credentials
 - encrypted SQLite credential persistence with key rotation support
 - SQLite-backed and In-Memory provider/routing catalog management
-- HTMX admin UI with ProMax dark obsidian theme, sticky sidebar navigation, authenticated sessions, CSRF protection, provider CRUD, route edits, credential controls, and OAuth connect/disconnect
+- HTMX admin UI with sticky sidebar navigation, authenticated sessions, CSRF protection, provider CRUD, route edits, credential controls, and OAuth connect/disconnect
 - type-safe `a-h/templ` components and compiled Tailwind CSS v4 embedded via Go `embed.FS`
 - public Go SDK (`pkg/sdk`) with client options, health checks, OpenAI Chat Completions, and Anthropic Messages support
 - request correlation IDs, structured access logs, liveness/readiness endpoints, and graceful shutdown
