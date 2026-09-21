@@ -81,22 +81,106 @@ templ CredentialCell(p ProviderView, csrf string) {
 				<span class="w-1.5 h-1.5 rounded-flat bg-ok"></span>
 				oauth connected
 			</span>
-			<form hx-delete={ "/admin/oauth/" + p.ID } hx-include="closest form">
+			<button type="button" popovertarget={ "oauth-modal-" + p.ID } class="btn-link">Manage OAuth</button>
+			<form hx-delete={ "/admin/oauth/" + p.ID } hx-include="closest form" hx-confirm={ fmt.Sprintf("Disconnect OAuth for %s? Existing tokens will be deleted.", p.ID) }>
 				<input type="hidden" name="csrf_token" value={ csrf }/>
 				<button type="submit" class="btn-link-danger">Disconnect OAuth</button>
 			</form>
+			@OAuthModal(p, csrf)
 		} else if p.OAuthAvailable {
 			<span class="inline-flex items-center gap-1.5 text-ink-3">
 				<span class="w-1.5 h-1.5 rounded-flat bg-warn"></span>
 				oauth not connected
 			</span>
-			<a href={ templ.SafeURL("/oauth/" + p.ID + "/start") } class="btn-link">Connect OAuth</a>
+			<button type="button" popovertarget={ "oauth-modal-" + p.ID } class="btn-link">Connect OAuth</button>
+			@OAuthModal(p, csrf)
 		} else {
 			<span class="inline-flex items-center gap-1.5 text-ink-3">
 				<span class="w-1.5 h-1.5 rounded-flat bg-rule-2"></span>
 				oauth unavailable
 			</span>
 		}
+	</div>
+}
+
+// OAuthModal provides an interactive connection modal for OAuth providers.
+templ OAuthModal(p ProviderView, csrf string) {
+	<div id={ "oauth-modal-" + p.ID } popover="auto" class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby={ "oauth-title-" + p.ID }>
+		<a href="#" class="modal-backdrop" aria-label="Close dialog"></a>
+		<div class="modal-panel border border-rule bg-plane p-6 rounded-panel shadow-2xl relative z-10 w-full max-w-lg">
+			<div class="flex items-center justify-between pb-3 mb-4 border-b border-rule">
+				<div class="flex items-center gap-2">
+					<span class="grid h-6 w-6 place-items-center rounded-flat border border-rule-2 bg-plane-2 text-signal">
+						@IconShieldCheck("w-3.5 h-3.5")
+					</span>
+					<h2 id={ "oauth-title-" + p.ID } class="text-sm font-semibold text-ink">Connect { p.ID }</h2>
+				</div>
+				<button type="button" popovertarget={ "oauth-modal-" + p.ID } popovertargetaction="hide" class="btn-link text-ink-3 hover:text-ink-2 text-lg leading-none" aria-label="Close dialog">
+					&times;
+				</button>
+			</div>
+
+			<div class="flex flex-col gap-4 text-start">
+				if p.OAuthFlowType == "device_code" {
+					<div class="border border-rule rounded-panel p-4 bg-well flex flex-col gap-3">
+						<div class="eyebrow">Device Code Authorization (Recommended)</div>
+						<p class="text-[11px] text-ink-3">Request a single-use device verification code and authorize it in your browser.</p>
+						<div id={ "device-flow-" + p.ID }>
+							<form method="post" action={ templ.SafeURL("/admin/oauth/" + p.ID + "/device-code") } hx-post={ "/admin/oauth/" + p.ID + "/device-code" } hx-target={ "#device-flow-" + p.ID } hx-swap="innerHTML">
+								<input type="hidden" name="csrf_token" value={ csrf }/>
+								<button type="submit" class="btn btn-primary">
+									Request Device Code
+								</button>
+							</form>
+						</div>
+					</div>
+				}
+
+				<div class="border border-rule rounded-panel p-4 bg-well flex flex-col gap-3">
+					<div class="eyebrow">Browser Authorization</div>
+					<p class="text-[11px] text-ink-3">Sign in securely using the provider's official authorization page.</p>
+					<div>
+						<a href={ templ.SafeURL("/oauth/" + p.ID + "/start") } target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+							Open Authorization Page
+						</a>
+					</div>
+				</div>
+
+				<div class="border border-rule rounded-panel p-4 bg-well flex flex-col gap-3">
+					<div class="eyebrow">Remote / Manual Callback Paste</div>
+					<p class="text-[11px] text-ink-3">For remote servers or containers where redirect fails, copy the redirected URL from your browser address bar and paste it below.</p>
+					<form class="flex flex-col gap-2" method="post" action={ templ.SafeURL("/admin/oauth/" + p.ID + "/exchange") } hx-post={ "/admin/oauth/" + p.ID + "/exchange" }>
+						<input type="hidden" name="csrf_token" value={ csrf }/>
+						<input name="code" placeholder="http://localhost:8080/oauth/callback?code=... or code" required class="w-full font-mono text-xs"/>
+						<div>
+							<button type="submit" class="btn btn-quiet">
+								Complete Authorization
+							</button>
+						</div>
+					</form>
+				</div>
+
+				<div class="border border-rule rounded-panel p-4 bg-well flex flex-col gap-3">
+					<div class="eyebrow">Direct Token Import</div>
+					<p class="text-[11px] text-ink-3">Have an existing access token or token JSON? Paste it here to seal directly into the vault.</p>
+					<form class="flex flex-col gap-2" method="post" action={ templ.SafeURL("/admin/oauth/" + p.ID + "/import") } hx-post={ "/admin/oauth/" + p.ID + "/import" }>
+						<input type="hidden" name="csrf_token" value={ csrf }/>
+						<input type="password" name="token" placeholder="Paste access token (Bearer or JWT) or JSON" required class="w-full font-mono text-xs" autocomplete="new-password"/>
+						<div>
+							<button type="submit" class="btn btn-quiet">
+								Import Token
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+
+			<div class="flex items-center justify-end gap-3 pt-3 border-t border-rule mt-5">
+				<button type="button" popovertarget={ "oauth-modal-" + p.ID } popovertargetaction="hide" class="btn btn-quiet">
+					Close
+				</button>
+			</div>
+		</div>
 	</div>
 }
 
@@ -162,8 +246,10 @@ templ EmptyState(title string, body string, href string, action string) {
 	<div class="flex flex-col items-center gap-2 px-6 py-12 text-center">
 		<p class="text-xs font-semibold text-ink-2">{ title }</p>
 		<p class="max-w-md text-[11px] text-ink-3">{ body }</p>
-		if href != "" {
-			<a href={ templ.SafeURL(href) } onclick="var d=document.getElementById('add-provider-dialog');if(d){d.showModal();return false;}" class="btn btn-quiet mt-2">{ action }</a>
+		if strings.HasPrefix(href, "#") {
+			<a href={ templ.SafeURL(href) } popovertarget={ strings.TrimPrefix(href, "#") } class="btn btn-quiet mt-2">{ action }</a>
+		} else if href != "" {
+			<a href={ templ.SafeURL(href) } class="btn btn-quiet mt-2">{ action }</a>
 		}
 	</div>
 }

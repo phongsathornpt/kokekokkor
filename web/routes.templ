@@ -14,26 +14,48 @@ templ Routes(data DashboardData) {
 					</h2>
 					<p class="mt-1 text-[11px] text-ink-3">A chain may mix protocols. Cross-protocol hops are translated, or rejected before the request is sent.</p>
 				</div>
+				if data.Editable {
+					<a href="#add-route-dialog" popovertarget="add-route-dialog" class="btn btn-primary shrink-0">
+						@IconPlus("w-3.5 h-3.5")
+						<span>Add route</span>
+					</a>
+				}
 			</div>
 
 			if len(data.Routes) > 0 {
 				@RouteLedger(data, true)
 			} else {
 				<div class="ledger-wrap">
-					@EmptyState("No model routes configured", "Without an alias, a request can only reach its protocol default. Add one to give a client-visible model name an ordered chain.", "#add-route", "Add a route")
+					if data.Editable {
+						@EmptyState("No model routes configured", "Without an alias, a request can only reach its protocol default. Add one to give a client-visible model name an ordered chain.", "#add-route-dialog", "Add a route")
+					} else {
+						@EmptyState("No model routes configured", "Without an alias, a request can only reach its protocol default.", "", "")
+					}
 				</div>
 			}
 		</section>
 
 		if data.Editable {
-			<section id="add-route" class="mt-12 max-w-3xl">
-				<div class="pb-3">
-					<h2 class="text-sm font-semibold text-ink">Add route</h2>
-					<p class="mt-1 text-[11px] text-ink-3">The alias is the model name a client sends. The chain is the ordered list of upstream attempts behind it.</p>
-				</div>
-				<form class="flex flex-col gap-4 border border-rule bg-plane p-5 rounded-panel" method="post" action="/admin/routes" hx-post="/admin/routes">
-					<input type="hidden" name="csrf_token" value={ data.CSRF }/>
-					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+			<div id="add-route-dialog" popover="auto" class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="add-route-title">
+				<a href="#" class="modal-backdrop" aria-label="Close dialog"></a>
+				<div id="add-route" class="modal-panel border border-rule bg-plane p-6 rounded-panel shadow-2xl relative z-10 w-full max-w-lg">
+					<div class="flex items-center justify-between pb-3 mb-4 border-b border-rule">
+						<div class="flex items-center gap-2">
+							<span class="grid h-6 w-6 place-items-center rounded-flat border border-rule-2 bg-plane-2 text-signal">
+								@IconRoute("w-3.5 h-3.5")
+							</span>
+							<h2 id="add-route-title" class="text-sm font-semibold text-ink">Add route</h2>
+						</div>
+						<a href="#" popovertarget="add-route-dialog" popovertargetaction="hide" class="btn-link text-ink-3 hover:text-ink-2 text-lg leading-none" aria-label="Close dialog">
+							&times;
+						</a>
+					</div>
+					<p class="mb-4 text-[11px] text-ink-3">The alias is the model name a client sends. The chain is the ordered list of upstream attempts behind it.</p>
+
+					<div id="add-route-alert"></div>
+
+					<form class="flex flex-col gap-4" method="post" action="/admin/routes" hx-post="/admin/routes">
+						<input type="hidden" name="csrf_token" value={ data.CSRF }/>
 						<div>
 							<label for="new-route-model">Model alias</label>
 							<input id="new-route-model" name="model" placeholder="model" required class="w-full"/>
@@ -41,19 +63,22 @@ templ Routes(data DashboardData) {
 						<div>
 							<label for="new-route-targets">Target chain</label>
 							<input id="new-route-targets" name="targets" placeholder="provider[:upstream-model], ..." required class="w-full"/>
+							<p class="mt-1.5 text-[11px] text-ink-3">
+								Comma separated. Each hop is <code class="ident text-ink-2">provider</code> or <code class="ident text-ink-2">provider:upstream-model</code>.
+							</p>
 						</div>
-					</div>
-					<p class="text-[11px] text-ink-3">
-						Comma separated. Each hop is <code class="ident text-ink-2">provider</code> or <code class="ident text-ink-2">provider:upstream-model</code>.
-					</p>
-					<div>
-						<button type="submit" class="btn btn-primary">
-							@IconPlus("w-3.5 h-3.5")
-							Add route
-						</button>
-					</div>
-				</form>
-			</section>
+						<div class="flex items-center justify-end gap-3 pt-3 border-t border-rule mt-2">
+							<a href="#" popovertarget="add-route-dialog" popovertargetaction="hide" class="btn btn-quiet">
+								Cancel
+							</a>
+							<button type="submit" class="btn btn-primary">
+								@IconPlus("w-3.5 h-3.5")
+								Add route
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
 		} else {
 			<p class="mt-12 text-[11px] text-ink-3">Catalog editing requires SQLite persistence.</p>
 		}

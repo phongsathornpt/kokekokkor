@@ -28,6 +28,14 @@ func (f *fakeTokens) Get(_ context.Context, providerID string) (domainoauth.Toke
 	return value, nil
 }
 
+func (f *fakeTokens) Put(_ context.Context, providerID string, tokens domainoauth.TokenSet) error {
+	if f.values == nil {
+		f.values = make(map[string]domainoauth.TokenSet)
+	}
+	f.values[providerID] = tokens
+	return nil
+}
+
 func (f *fakeTokens) Delete(_ context.Context, providerID string) error {
 	if _, ok := f.values[providerID]; !ok {
 		return errors.New("unexpected provider")
@@ -516,5 +524,110 @@ func TestAdminDedicatedPageRoutes(t *testing.T) {
 				t.Errorf("GET %s missing hx-boost", tc.path)
 			}
 		})
+	}
+}
+
+type fakeAdminOAuthService struct {
+	deviceAuth  domainoauth.DeviceAuthorization
+	deviceErr   error
+	pollTokens  domainoauth.TokenSet
+	pollErr     error
+	exchangeErr error
+}
+
+func (f *fakeAdminOAuthService) DeviceAuthorize(context.Context, domainoauth.Provider) (domainoauth.DeviceAuthorization, error) {
+	return f.deviceAuth, f.deviceErr
+}
+
+func (f *fakeAdminOAuthService) DevicePoll(context.Context, domainoauth.Provider, string) (domainoauth.TokenSet, error) {
+	return f.pollTokens, f.pollErr
+}
+
+func (f *fakeAdminOAuthService) DirectExchange(context.Context, domainoauth.Provider, string, string) (domainoauth.TokenSet, error) {
+	return f.pollTokens, f.exchangeErr
+}
+
+func (f *fakeAdminOAuthService) ImportToken(context.Context, string, domainoauth.TokenSet) error {
+	return nil
+}
+
+func TestAdminOAuthDeviceCodeAndPoll(t *testing.T) {
+	catalog := &fakeCatalog{snapshot: testSnapshot()}
+	tokens := &fakeTokens{values: make(map[string]domainoauth.TokenSet)}
+	handler, err := NewManageable(catalog.snapshot, catalog, &fakeCredentials{values: map[string]string{}}, tokens, []string{"github"})
+	if err != nil {
+		t.Fatalf("NewManageable() error = %v", err)
+	}
+	oauthService := &fakeAdminOAuthService{
+		deviceAuth: domainoauth.DeviceAuthorization{
+			DeviceCode:              "dev-code-123",
+			UserCode:                "WDJB-4321",
+			VerificationURI:         "https://github.com/login/device",
+			VerificationURIComplete: "https://github.com/login/device?user_code=WDJB-4321",
+			Interval:                5,
+		},
+		pollTokens: domainoauth.TokenSet{AccessToken: "token-abc"},
+	}
+	handler.SetOAuthService(oauthService, map[string]domainoauth.Provider{
+		"github": {ID: "github", FlowType: domainoauth.FlowTypeDeviceCode},
+	})
+
+	// 1. Request device code
+	req := httptest.NewRequest(http.MethodPost, "/admin/oauth/github/device-code", nil)
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("device-code status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "WDJB-4321") || !strings.Contains(body, "https://github.com/login/device") {
+		t.Fatalf("body missing expected user code: %s", body)
+	}
+
+	// 2. Poll device code
+	req = httptest.NewRequest(http.MethodGet, "/admin/oauth/github/poll?device_code=dev-code-123", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("poll status = %d, want 204", rec.Code)
+	}
+}
+
+func TestAdminOAuthManualExchangeAndImport(t *testing.T) {
+	catalog := &fakeCatalog{snapshot: testSnapshot()}
+	tokens := &fakeTokens{values: make(map[string]domainoauth.TokenSet)}
+	handler, err := NewManageable(catalog.snapshot, catalog, &fakeCredentials{values: map[string]string{}}, tokens, []string{"anthropic"})
+	if err != nil {
+		t.Fatalf("NewManageable() error = %v", err)
+	}
+	oauthService := &fakeAdminOAuthService{
+		pollTokens: domainoauth.TokenSet{AccessToken: "exchanged-token"},
+	}
+	handler.SetOAuthService(oauthService, map[string]domainoauth.Provider{
+		"anthropic": {ID: "anthropic", FlowType: domainoauth.FlowTypeAuthorizationCode},
+	})
+
+	// 1. Manual Exchange with callback URL
+	form := url.Values{"code": {"https://localhost:8080/callback?code=test-code-123&state=xyz"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/oauth/anthropic/exchange", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("exchange status = %d, want 204", rec.Code)
+	}
+
+	// 2. Direct Import Token
+	form = url.Values{"token": {"sk-ant-oauth-token-999"}}
+	req = httptest.NewRequest(http.MethodPost, "/admin/oauth/anthropic/import", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("import status = %d, want 204", rec.Code)
+	}
+	if tokens.values["anthropic"].AccessToken != "sk-ant-oauth-token-999" {
+		t.Fatalf("tokens = %#v", tokens.values)
 	}
 }

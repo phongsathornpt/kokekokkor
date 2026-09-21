@@ -129,6 +129,47 @@ func TestCodexProfileOverrides(t *testing.T) {
 	}
 }
 
+func TestClaudeProfile(t *testing.T) {
+	profile, err := ClaudeProfile(ProfileOptions{})
+	if err != nil {
+		t.Fatalf("ClaudeProfile() error = %v", err)
+	}
+	if profile.ID != "anthropic" {
+		t.Fatalf("profile.ID = %q, want %q", profile.ID, "anthropic")
+	}
+	if profile.ClientID != ClaudeClientID {
+		t.Fatalf("profile.ClientID = %q, want %q", profile.ClientID, ClaudeClientID)
+	}
+	if profile.AuthorizationURL != ClaudeAuthorizationURL || profile.TokenURL != ClaudeTokenURL {
+		t.Fatalf("profile URLs = (%q, %q)", profile.AuthorizationURL, profile.TokenURL)
+	}
+	if len(profile.Scopes) != 2 {
+		t.Fatalf("profile.Scopes = %#v, want 2 scopes", profile.Scopes)
+	}
+}
+
+func TestGitHubCopilotProfile(t *testing.T) {
+	profile, err := GitHubCopilotProfile(ProfileOptions{})
+	if err != nil {
+		t.Fatalf("GitHubCopilotProfile() error = %v", err)
+	}
+	if profile.ID != "github" {
+		t.Fatalf("profile.ID = %q, want %q", profile.ID, "github")
+	}
+	if profile.FlowType != "device_code" {
+		t.Fatalf("profile.FlowType = %q, want device_code", profile.FlowType)
+	}
+	if profile.ClientID != GitHubCopilotClientID {
+		t.Fatalf("profile.ClientID = %q, want %q", profile.ClientID, GitHubCopilotClientID)
+	}
+	if profile.DeviceAuthorizationURL != GitHubDeviceAuthorizationURL || profile.TokenURL != GitHubTokenURL {
+		t.Fatalf("profile URLs = (%q, %q)", profile.DeviceAuthorizationURL, profile.TokenURL)
+	}
+	if len(profile.Scopes) != 1 || profile.Scopes[0] != "read:user" {
+		t.Fatalf("profile.Scopes = %#v, want read:user", profile.Scopes)
+	}
+}
+
 func TestChatGPTProfileAlias(t *testing.T) {
 	profile, err := ChatGPTProfile(ProfileOptions{})
 	if err != nil {
