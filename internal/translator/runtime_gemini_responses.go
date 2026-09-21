@@ -7,6 +7,7 @@ import (
 
 	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
 	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
+	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 	geminiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/gemini"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
@@ -39,23 +40,33 @@ func (r *Runtime) OpenAIResponsesToGemini(ctx context.Context, target provider.T
 		return upstream.Response{}, apptranslation.WrapRequest(err)
 	}
 
-	response, err := r.client.Do(ctx, target, upstream.Request{
-		Method: http.MethodPost,
-		Path:   path,
-		Header: header,
-		Body:   encoded,
-	})
+	work := func(workCtx context.Context) (upstream.Response, llm.Response, error) {
+		response, err := r.client.Do(workCtx, target, upstream.Request{
+			Method: http.MethodPost,
+			Path:   path,
+			Header: header,
+			Body:   encoded,
+		})
+		if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
+			return response, llm.Response{}, err
+		}
+
+		canonical, err := geminiProtocol.DecodeGenerateContentResponse(response.Body)
+		if err != nil {
+			return upstream.Response{}, llm.Response{}, apptranslation.WrapResponse(err)
+		}
+		canonical, err = apptranslation.GeminiToResponsesResponse(canonical)
+		if err != nil {
+			return upstream.Response{}, llm.Response{}, apptranslation.WrapResponse(err)
+		}
+		return response, canonical, nil
+	}
+	if statePlan.state != nil && statePlan.state.Background {
+		return r.startBackgroundResponses(model, statePlan, work)
+	}
+	response, canonical, err := work(ctx)
 	if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
 		return response, err
-	}
-
-	canonical, err := geminiProtocol.DecodeGenerateContentResponse(response.Body)
-	if err != nil {
-		return upstream.Response{}, apptranslation.WrapResponse(err)
-	}
-	canonical, err = apptranslation.GeminiToResponsesResponse(canonical)
-	if err != nil {
-		return upstream.Response{}, apptranslation.WrapResponse(err)
 	}
 	if statePlan.state != nil {
 		canonical.PreviousResponseID = statePlan.state.PreviousResponseID
