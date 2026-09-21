@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
 	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
