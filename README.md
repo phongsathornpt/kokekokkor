@@ -113,7 +113,7 @@ KOKEKOKKOR_CREDENTIAL_ACTIVE_KEY_VERSION
 
 Credential keys are versioned 32-byte values encoded as base64. Existing encrypted credentials can remain readable while the active version changes, allowing rotation without storing plaintext provider secrets.
 
-The admin surface is enabled when an admin credential exists. `KOKEKOKKOR_ADMIN_PASSWORD` takes precedence; otherwise `KOKEKOKKOR_API_KEY` is used as the admin password. The browser session uses CSRF protection and does not render stored secret values.
+The admin surface is enabled by default with a default password of `admin` (or `KOKEKOKKOR_ADMIN_PASSWORD` / `KOKEKOKKOR_API_KEY` when configured). It can be disabled by setting `KOKEKOKKOR_ADMIN_ENABLED=false`. Navigating to `/` redirects to `/admin`. The browser session uses CSRF protection and does not render stored secret values.
 
 ## OAuth
 
@@ -145,7 +145,8 @@ KOKEKOKKOR_OAUTH_PROFILES_JSON
 | `KOKEKOKKOR_GEMINI_PROVIDER_ID` | `gemini` | Gemini provider ID |
 | `KOKEKOKKOR_GEMINI_BASE_URL` | empty | Gemini upstream URL |
 | `KOKEKOKKOR_GEMINI_API_KEY` | empty | Gemini upstream key |
-| `KOKEKOKKOR_ADMIN_PASSWORD` | gateway API key | Admin login password |
+| `KOKEKOKKOR_ADMIN_ENABLED` | `true` | Enable or disable the admin dashboard |
+| `KOKEKOKKOR_ADMIN_PASSWORD` | `admin` (or gateway API key) | Admin login password |
 | `KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL` | empty | Public base URL used for OAuth callbacks |
 | `KOKEKOKKOR_OAUTH_PROFILES_JSON` | empty | OAuth profile definitions |
 | `KOKEKOKKOR_CREDENTIAL_KEYS_JSON` | empty | Versioned base64 encryption keys |
