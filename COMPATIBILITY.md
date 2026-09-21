@@ -33,6 +33,8 @@ The canonical layer currently preserves the portable subset shared by the partic
 - provider stream failures into OpenAI Responses `response.failed` when a portable code/message exists
 - buffered OpenAI Responses bare `web_search` requests into Gemini Google Search grounding
 - Gemini grounded-search queries into OpenAI Responses `web_search_call` items and grounded URLs into `url_citation` annotations when the returned grounding metadata fits the portable subset
+- gateway-hosted OpenAI Responses `store`, `previous_response_id`, conversation resources, response retrieval/deletion, and portable transcript continuation for translated Anthropic/Gemini routes
+- translated buffered Responses `background:true` execution with persisted queued/in-progress/completed/failed state, cancellation, and bounded background retention
 
 ### OpenAI Realtime -> Gemini Live
 
@@ -55,7 +57,7 @@ The following are intentionally rejected instead of being silently flattened or 
 - translated streaming `web_search` to Gemini; search-call and citation metadata are currently preserved only on buffered responses
 - OpenAI `web_search` options such as provider-specific location/domain/context controls that do not have an exact Gemini equivalent
 - Gemini grounding UI payloads such as `searchEntryPoint`, which have no exact OpenAI Responses representation
-- persisted conversation, background execution, and other provider-hosted state controls across protocols
+- opaque provider-hosted continuation state that cannot be reconstructed from the portable transcript, including provider-local encrypted/redacted reasoning state
 - arbitrary provider extension metadata without an explicit mapping
 - provider-local reasoning signatures, encrypted/redacted thinking continuation state, or equivalent opaque continuation material
 - Anthropic document blocks on the Chat Completions path
@@ -96,7 +98,6 @@ go build ./...
 
 The application translation package also contains a table-driven portable request matrix covering every currently implemented cross-protocol request direction.
 
-
 ## Completion boundary
 
-The compatibility surface is considered complete when every cross-protocol feature is either mapped losslessly or rejected explicitly. Provider-hosted persistence, background execution, provider-local file identifiers, remote-media fetching, provider UI payloads, and Realtime controls without an exact peer-protocol operation are terminal compatibility boundaries rather than implicit implementation promises. Native passthrough remains the fidelity path for those features.
+The compatibility surface is considered complete when every cross-protocol feature is either mapped losslessly or rejected explicitly. Translated OpenAI Responses state is gateway-hosted only for the portable transcript subset; opaque provider continuation material is never fabricated. Provider-local file identifiers, remote-media fetching, provider UI payloads, opaque provider state, and Realtime controls without an exact peer-protocol operation are terminal compatibility boundaries rather than implicit implementation promises. Native passthrough remains the fidelity path for those features.
