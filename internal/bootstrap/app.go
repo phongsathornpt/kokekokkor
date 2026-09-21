@@ -108,16 +108,27 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	return &App{server: server.HTTP, logger: logger, catalogStore: catalogStore}, nil
 }
 
+func (a *App) Handler() http.Handler {
+	if a == nil || a.server == nil {
+		return nil
+	}
+	return a.server.Handler
+}
+
 func (a *App) Run(ctx context.Context) (err error) {
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", a.server.Addr)
+	if err != nil {
+		return err
+	}
+	return a.RunListener(ctx, listener)
+}
+
+func (a *App) RunListener(ctx context.Context, listener net.Listener) (err error) {
 	defer func() {
 		if closeErr := a.Close(); err == nil && closeErr != nil {
 			err = closeErr
 		}
 	}()
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", a.server.Addr)
-	if err != nil {
-		return err
-	}
 	a.logger.Info("gateway listening", "addr", listener.Addr().String())
 	errCh := make(chan error, 1)
 	go func() { errCh <- a.server.Serve(listener) }()
@@ -128,9 +139,10 @@ func (a *App) Run(ctx context.Context) (err error) {
 		}
 		return err
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if err := a.server.Shutdown(shutdownCtx); err != nil {
+			_ = a.server.Close()
 			return err
 		}
 		return nil

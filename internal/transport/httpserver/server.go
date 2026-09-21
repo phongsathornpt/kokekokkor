@@ -45,6 +45,9 @@ func NewWithAdmin(addr, gatewayAPIKey string, ready func() bool, openAI, anthrop
 	if admin != nil {
 		mux.Handle("/admin", admin)
 		mux.Handle("/admin/", admin)
+		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		})
 	}
 	mux.Handle("POST /v1/messages", anthropicAPIKeyAuth(gatewayAPIKey, anthropic))
 	mux.Handle("POST /v1/messages/count_tokens", anthropicAPIKeyAuth(gatewayAPIKey, anthropic))

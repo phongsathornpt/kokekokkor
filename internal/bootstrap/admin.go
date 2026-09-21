@@ -14,7 +14,7 @@ import (
 
 func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, credentials *appcredentials.Service, oauth oauthRuntime, store *sqlitestore.Store, router *routing.Table) (http.Handler, error) {
 	adminConfig := config.LoadAdmin(cfg.GatewayAPIKey)
-	if adminConfig.Password == "" {
+	if !adminConfig.Enabled || adminConfig.Password == "" {
 		return nil, nil
 	}
 
