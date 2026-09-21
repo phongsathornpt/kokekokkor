@@ -125,6 +125,9 @@ func TestRenderProviders(t *testing.T) {
 		`<label for="new-api-key">API Key (optional)</label>`,
 		`hx-post="/admin/providers/toggle"`,
 		`hx-delete="/admin/oauth/gemini-oauth"`,
+		`id="oauth-modal-gemini-oauth"`,
+		"Manage OAuth",
+		"Direct Token Import",
 		`hx-include="closest form"`,
 		`hx-boost:inherited="true"`,
 		`htmx.org@4.0.0`,
@@ -175,6 +178,8 @@ func TestRenderRoutes(t *testing.T) {
 		"fast-chat",
 		"Fallback chain",
 		"Add route",
+		`id="add-route-dialog"`,
+		`id="add-route-alert"`,
 		`hx-post="/admin/routes"`,
 		`hx-post="/admin/routes/delete"`,
 	}

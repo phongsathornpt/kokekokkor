@@ -72,6 +72,8 @@ func TestLoadOAuthRejectsPartialConfiguration(t *testing.T) {
 	t.Setenv("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL", "https://gateway.example.com")
 	t.Setenv("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID", "")
 	t.Setenv("KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID", "")
+	t.Setenv("KOKEKOKKOR_OAUTH_CLAUDE_CLIENT_ID", "")
+	t.Setenv("KOKEKOKKOR_OAUTH_GITHUB_CLIENT_ID", "")
 	t.Setenv("KOKEKOKKOR_OAUTH_PROFILES_JSON", "")
 	if _, _, err := LoadOAuth(); err == nil {
 		t.Fatal("LoadOAuth() error = nil, want client ID validation error")

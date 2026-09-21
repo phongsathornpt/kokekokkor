@@ -127,6 +127,67 @@ func (s *Service) Complete(ctx context.Context, provider domainoauth.Provider, s
 	return tokens, nil
 }
 
+func (s *Service) DeviceAuthorize(ctx context.Context, provider domainoauth.Provider) (domainoauth.DeviceAuthorization, error) {
+	if s.exchanger == nil {
+		return domainoauth.DeviceAuthorization{}, fmt.Errorf("OAuth exchanger is not configured")
+	}
+	return s.exchanger.DeviceAuthorize(ctx, provider)
+}
+
+func (s *Service) DevicePoll(ctx context.Context, provider domainoauth.Provider, deviceCode string) (domainoauth.TokenSet, error) {
+	if s.exchanger == nil || s.tokens == nil {
+		return domainoauth.TokenSet{}, fmt.Errorf("OAuth service dependencies are not configured")
+	}
+	tokens, err := s.exchanger.DevicePoll(ctx, provider, deviceCode)
+	if err != nil {
+		return domainoauth.TokenSet{}, err
+	}
+	if strings.TrimSpace(tokens.AccessToken) == "" {
+		return domainoauth.TokenSet{}, fmt.Errorf("OAuth token response did not contain an access token")
+	}
+	if err := s.tokens.Put(ctx, provider.ID, tokens); err != nil {
+		return domainoauth.TokenSet{}, fmt.Errorf("persist OAuth token set: %w", err)
+	}
+	return tokens, nil
+}
+
+func (s *Service) DirectExchange(ctx context.Context, provider domainoauth.Provider, code, redirectURI string) (domainoauth.TokenSet, error) {
+	if s.exchanger == nil || s.tokens == nil {
+		return domainoauth.TokenSet{}, fmt.Errorf("OAuth service dependencies are not configured")
+	}
+	tokens, err := s.exchanger.Exchange(ctx, provider, ExchangeRequest{
+		Code:        code,
+		RedirectURI: redirectURI,
+	})
+	if err != nil {
+		return domainoauth.TokenSet{}, fmt.Errorf("exchange OAuth authorization code: %w", err)
+	}
+	if strings.TrimSpace(tokens.AccessToken) == "" {
+		return domainoauth.TokenSet{}, fmt.Errorf("OAuth token response did not contain an access token")
+	}
+	if err := s.tokens.Put(ctx, provider.ID, tokens); err != nil {
+		return domainoauth.TokenSet{}, fmt.Errorf("persist OAuth token set: %w", err)
+	}
+	return tokens, nil
+}
+
+func (s *Service) ImportToken(ctx context.Context, providerID string, tokens domainoauth.TokenSet) error {
+	if s.tokens == nil {
+		return fmt.Errorf("OAuth token repository is not configured")
+	}
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return fmt.Errorf("provider ID must not be empty")
+	}
+	if strings.TrimSpace(tokens.AccessToken) == "" {
+		return fmt.Errorf("access token must not be empty")
+	}
+	if tokens.TokenType == "" {
+		tokens.TokenType = "Bearer"
+	}
+	return s.tokens.Put(ctx, providerID, tokens)
+}
+
 func validateRedirectURI(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {

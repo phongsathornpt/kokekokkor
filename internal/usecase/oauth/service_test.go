@@ -21,6 +21,14 @@ func (f *fakeExchanger) Exchange(_ context.Context, _ domainoauth.Provider, requ
 	return f.tokens, f.err
 }
 
+func (f *fakeExchanger) DeviceAuthorize(_ context.Context, _ domainoauth.Provider) (domainoauth.DeviceAuthorization, error) {
+	return domainoauth.DeviceAuthorization{UserCode: "1234"}, f.err
+}
+
+func (f *fakeExchanger) DevicePoll(_ context.Context, _ domainoauth.Provider, _ string) (domainoauth.TokenSet, error) {
+	return f.tokens, f.err
+}
+
 type memoryTokens struct {
 	items map[string]domainoauth.TokenSet
 }

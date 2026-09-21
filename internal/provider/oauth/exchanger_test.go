@@ -115,9 +115,123 @@ func tokenResponseClient(body string) *http.Client {
 
 func testOAuthProvider() domainoauth.Provider {
 	return domainoauth.Provider{
-		ID:               "provider",
-		AuthorizationURL: "https://login.example.com/authorize",
-		TokenURL:         "https://login.example.com/token",
-		ClientID:         "client-id",
+		ID:                     "provider",
+		AuthorizationURL:       "https://login.example.com/authorize",
+		TokenURL:               "https://login.example.com/token",
+		DeviceAuthorizationURL: "https://login.example.com/device/code",
+		ClientID:               "client-id",
 	}
+}
+
+func TestExchangerDeviceAuthorize(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodPost || r.URL.String() != "https://login.example.com/device/code" {
+			t.Fatalf("request = %s %s", r.Method, r.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(`{
+				"device_code": "dev-123",
+				"user_code": "ABCD-4321",
+				"verification_uri": "https://login.example.com/device",
+				"expires_in": 600,
+				"interval": 5
+			}`)),
+		}, nil
+	})}
+	ex := NewExchanger(client)
+	auth, err := ex.DeviceAuthorize(context.Background(), testOAuthProvider())
+	if err != nil {
+		t.Fatalf("DeviceAuthorize() error = %v", err)
+	}
+	if auth.DeviceCode != "dev-123" || auth.UserCode != "ABCD-4321" || auth.Interval != 5 {
+		t.Fatalf("auth = %#v", auth)
+	}
+}
+
+func TestExchangerDevicePoll(t *testing.T) {
+	t.Run("pending", func(t *testing.T) {
+		client := tokenResponseClient(`{"error": "authorization_pending"}`)
+		ex := NewExchanger(client)
+		_, err := ex.DevicePoll(context.Background(), testOAuthProvider(), "dev-123")
+		if err != appoauth.ErrAuthorizationPending {
+			t.Fatalf("DevicePoll() error = %v, want ErrAuthorizationPending", err)
+		}
+	})
+
+	t.Run("success", func(t *testing.T) {
+		client := tokenResponseClient(`{"access_token": "secret-access", "token_type": "bearer"}`)
+		ex := NewExchanger(client)
+		tokens, err := ex.DevicePoll(context.Background(), testOAuthProvider(), "dev-123")
+		if err != nil {
+			t.Fatalf("DevicePoll() error = %v", err)
+		}
+		if tokens.AccessToken != "secret-access" {
+			t.Fatalf("tokens = %#v", tokens)
+		}
+	})
+
+	t.Run("openai_device_flow", func(t *testing.T) {
+		openAIProvider := domainoauth.Provider{
+			ID:                     "openai",
+			ClientID:               OpenAICodexClientID,
+			DeviceAuthorizationURL: "https://auth.openai.com/api/accounts/deviceauth/usercode",
+			TokenURL:               "https://auth.openai.com/oauth/token",
+		}
+		// 1. Authorize
+		authClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"device_auth_id": "auth-id-1",
+					"user_code": "USER-1234",
+					"interval": "5"
+				}`)),
+			}, nil
+		})}
+		ex := NewExchanger(authClient)
+		auth, err := ex.DeviceAuthorize(context.Background(), openAIProvider)
+		if err != nil {
+			t.Fatalf("DeviceAuthorize() error = %v", err)
+		}
+		if auth.UserCode != "USER-1234" || auth.DeviceCode != "auth-id-1|USER-1234" {
+			t.Fatalf("auth = %#v", auth)
+		}
+
+		// 2. Poll & Token Exchange
+		pollClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path == "/api/accounts/deviceauth/token" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"authorization_code": "code-xyz",
+						"code_verifier": "verifier-abc"
+					}`)),
+				}, nil
+			}
+			if r.URL.Path == "/oauth/token" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"access_token": "oa-access-token",
+						"refresh_token": "oa-refresh-token",
+						"token_type": "Bearer"
+					}`)),
+				}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound}, nil
+		})}
+		exPoll := NewExchanger(pollClient)
+		tokens, err := exPoll.DevicePoll(context.Background(), openAIProvider, auth.DeviceCode)
+		if err != nil {
+			t.Fatalf("DevicePoll() error = %v", err)
+		}
+		if tokens.AccessToken != "oa-access-token" {
+			t.Fatalf("tokens = %#v", tokens)
+		}
+	})
 }

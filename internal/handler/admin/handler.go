@@ -2,9 +2,12 @@ package adminhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,7 +21,15 @@ import (
 
 type TokenStore interface {
 	Get(context.Context, string) (domainoauth.TokenSet, error)
+	Put(context.Context, string, domainoauth.TokenSet) error
 	Delete(context.Context, string) error
+}
+
+type OAuthService interface {
+	DeviceAuthorize(context.Context, domainoauth.Provider) (domainoauth.DeviceAuthorization, error)
+	DevicePoll(context.Context, domainoauth.Provider, string) (domainoauth.TokenSet, error)
+	DirectExchange(context.Context, domainoauth.Provider, string, string) (domainoauth.TokenSet, error)
+	ImportToken(context.Context, string, domainoauth.TokenSet) error
 }
 
 type CatalogEditor interface {
@@ -57,7 +68,8 @@ type Handler struct {
 	catalog        CatalogEditor
 	credentials    CredentialEditor
 	tokens         TokenStore
-	oauthProviders map[string]struct{}
+	oauthProviders map[string]domainoauth.Provider
+	oauthService   OAuthService
 }
 
 func New(snapshot domaincatalog.Snapshot, tokens TokenStore, oauthProviderIDs []string, apiKeys map[string]bool) (*Handler, error) {
@@ -72,13 +84,22 @@ func NewManageable(snapshot domaincatalog.Snapshot, catalog CatalogEditor, crede
 	return newHandler(snapshot, catalog, credentials, tokens, oauthProviderIDs)
 }
 
+func (h *Handler) SetOAuthService(service OAuthService, profiles map[string]domainoauth.Provider) {
+	h.oauthService = service
+	if profiles != nil {
+		for id, p := range profiles {
+			h.oauthProviders[id] = p
+		}
+	}
+}
+
 func newHandler(snapshot domaincatalog.Snapshot, catalog CatalogEditor, credentials CredentialEditor, tokens TokenStore, oauthProviderIDs []string) (*Handler, error) {
 	if err := snapshot.Validate(); err != nil {
 		return nil, err
 	}
-	providers := make(map[string]struct{}, len(oauthProviderIDs))
+	providers := make(map[string]domainoauth.Provider, len(oauthProviderIDs))
 	for _, id := range oauthProviderIDs {
-		providers[id] = struct{}{}
+		providers[id] = domainoauth.Provider{ID: id}
 	}
 	if credentials == nil {
 		credentials = staticCredentialStatus(nil)
@@ -98,6 +119,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.renderRoutes(w, r)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/admin/oauth/"):
 		h.disconnect(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/device-code"):
+		h.deviceCode(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/poll"):
+		h.pollDeviceCode(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/exchange"):
+		h.manualExchange(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/import"):
+		h.importToken(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/admin/providers":
 		h.createProvider(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/admin/providers/update":
@@ -181,6 +210,165 @@ func (h *Handler) disconnect(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.tokens.Delete(r.Context(), providerID); err != nil && !errors.Is(err, appoauth.ErrTokenNotFound) {
 		mutationError(w, http.StatusInternalServerError, "disconnect failed")
+		return
+	}
+	mutationOK(w)
+}
+
+func (h *Handler) deviceCode(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/admin/oauth/")
+	providerID := strings.TrimSuffix(path, "/device-code")
+	provider, ok := h.oauthProviders[providerID]
+	if !ok || h.oauthService == nil {
+		mutationError(w, http.StatusNotFound, fmt.Sprintf("OAuth device flow not available for %s", providerID))
+		return
+	}
+	deviceAuth, err := h.oauthService.DeviceAuthorize(r.Context(), provider)
+	if err != nil {
+		mutationError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		verifyURL := deviceAuth.VerificationURIComplete
+		if verifyURL == "" {
+			verifyURL = deviceAuth.VerificationURI
+		}
+		interval := deviceAuth.Interval
+		if interval <= 0 {
+			interval = 5
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<div class="flex flex-col items-center gap-3 text-center py-2">
+			<div class="text-[11px] text-ink-3">Enter this code on the verification page:</div>
+			<div class="num font-mono text-xl font-bold tracking-widest text-signal px-4 py-2 border border-rule-2 bg-plane-2 rounded-flat select-all">%s</div>
+			<a href="%s" target="_blank" rel="noopener noreferrer" class="btn btn-primary mt-1">
+				Open Verification Page
+			</a>
+			<div class="flex items-center gap-2 text-xs text-ink-3 mt-2" hx-get="/admin/oauth/%s/poll?device_code=%s" hx-trigger="every %ds" hx-swap="outerHTML">
+				<span class="w-1.5 h-1.5 rounded-full bg-signal animate-ping"></span>
+				Waiting for authorization...
+			</div>
+		</div>`, html.EscapeString(deviceAuth.UserCode), html.EscapeString(verifyURL), url.PathEscape(providerID), url.QueryEscape(deviceAuth.DeviceCode), interval)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(deviceAuth)
+}
+
+func (h *Handler) pollDeviceCode(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/admin/oauth/")
+	providerID := strings.TrimSuffix(path, "/poll")
+	provider, ok := h.oauthProviders[providerID]
+	if !ok || h.oauthService == nil {
+		mutationError(w, http.StatusNotFound, fmt.Sprintf("OAuth not available for %s", providerID))
+		return
+	}
+	deviceCode := r.URL.Query().Get("device_code")
+	if deviceCode == "" {
+		mutationError(w, http.StatusBadRequest, "device_code is required")
+		return
+	}
+	_, err := h.oauthService.DevicePoll(r.Context(), provider, deviceCode)
+	if err != nil {
+		switch {
+		case errors.Is(err, appoauth.ErrAuthorizationPending), errors.Is(err, appoauth.ErrSlowDown):
+			interval := 5
+			if errors.Is(err, appoauth.ErrSlowDown) {
+				interval = 10
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<div class="flex items-center gap-2 text-xs text-ink-3 mt-2" hx-get="/admin/oauth/%s/poll?device_code=%s" hx-trigger="every %ds" hx-swap="outerHTML">
+				<span class="w-1.5 h-1.5 rounded-full bg-signal animate-ping"></span>
+				Waiting for authorization...
+			</div>`, url.PathEscape(providerID), url.QueryEscape(deviceCode), interval)
+			return
+		default:
+			mutationError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	mutationOK(w)
+}
+
+func (h *Handler) manualExchange(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/admin/oauth/")
+	providerID := strings.TrimSuffix(path, "/exchange")
+	provider, ok := h.oauthProviders[providerID]
+	if !ok {
+		mutationError(w, http.StatusNotFound, fmt.Sprintf("OAuth not available for %s", providerID))
+		return
+	}
+	raw := strings.TrimSpace(r.FormValue("code"))
+	if raw == "" {
+		mutationError(w, http.StatusBadRequest, "code or callback URL is required")
+		return
+	}
+	if strings.HasPrefix(raw, "eyJ") || strings.HasPrefix(raw, "sk-") {
+		if h.tokens == nil {
+			mutationError(w, http.StatusBadRequest, "token storage not configured")
+			return
+		}
+		if err := h.tokens.Put(r.Context(), providerID, domainoauth.TokenSet{AccessToken: raw, TokenType: "Bearer"}); err != nil {
+			mutationError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		mutationOK(w)
+		return
+	}
+	code := raw
+	if strings.Contains(raw, "?") {
+		if u, err := url.Parse(raw); err == nil {
+			code = u.Query().Get("code")
+		}
+	} else if strings.Contains(raw, "code=") {
+		if vals, err := url.ParseQuery(raw); err == nil {
+			code = vals.Get("code")
+		}
+	}
+	if code == "" {
+		mutationError(w, http.StatusBadRequest, "no authorization code found in input")
+		return
+	}
+	if h.oauthService == nil {
+		mutationError(w, http.StatusBadRequest, "OAuth exchange service is not configured")
+		return
+	}
+	if _, err := h.oauthService.DirectExchange(r.Context(), provider, code, ""); err != nil {
+		mutationError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	mutationOK(w)
+}
+
+func (h *Handler) importToken(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/admin/oauth/")
+	providerID := strings.TrimSuffix(path, "/import")
+	if _, ok := h.oauthProviders[providerID]; !ok {
+		mutationError(w, http.StatusNotFound, fmt.Sprintf("OAuth not available for %s", providerID))
+		return
+	}
+	raw := strings.TrimSpace(r.FormValue("token"))
+	if raw == "" {
+		mutationError(w, http.StatusBadRequest, "token is required")
+		return
+	}
+	var tokenSet domainoauth.TokenSet
+	if err := json.Unmarshal([]byte(raw), &tokenSet); err == nil && tokenSet.AccessToken != "" {
+		if tokenSet.TokenType == "" {
+			tokenSet.TokenType = "Bearer"
+		}
+	} else {
+		tokenSet = domainoauth.TokenSet{
+			AccessToken: raw,
+			TokenType:   "Bearer",
+		}
+	}
+	if h.tokens == nil {
+		mutationError(w, http.StatusBadRequest, "token storage not configured")
+		return
+	}
+	if err := h.tokens.Put(r.Context(), providerID, tokenSet); err != nil {
+		mutationError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	mutationOK(w)
@@ -405,7 +593,7 @@ func (h *Handler) view(ctx context.Context) (web.DashboardData, error) {
 		Protocols:          []string{"openai", "anthropic", "gemini"},
 	}
 	for _, item := range snapshot.Providers {
-		_, oauthAvailable := h.oauthProviders[item.ID]
+		profile, oauthAvailable := h.oauthProviders[item.ID]
 		connected := false
 		if oauthAvailable && h.tokens != nil {
 			_, err := h.tokens.Get(ctx, item.ID)
@@ -417,9 +605,13 @@ func (h *Handler) view(ctx context.Context) (web.DashboardData, error) {
 				return web.DashboardData{}, err
 			}
 		}
+		flowType := string(profile.FlowType)
+		if flowType == "" {
+			flowType = string(domainoauth.FlowTypeAuthorizationCode)
+		}
 		data.Providers = append(data.Providers, web.ProviderView{
 			ID: item.ID, Protocol: string(item.Protocol), BaseURL: item.BaseURL, Enabled: item.Enabled,
-			OAuthAvailable: oauthAvailable, OAuthConnected: connected, APIKey: h.credentials.HasAPIKey(item.ID),
+			OAuthAvailable: oauthAvailable, OAuthConnected: connected, OAuthFlowType: flowType, APIKey: h.credentials.HasAPIKey(item.ID),
 		})
 	}
 	sort.Slice(data.Providers, func(i, j int) bool { return data.Providers[i].ID < data.Providers[j].ID })
