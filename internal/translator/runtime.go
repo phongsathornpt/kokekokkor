@@ -18,7 +18,7 @@ type Runtime struct {
 	client        upstream.Client
 	responseState responsestate.Store
 	backgroundMu  sync.Mutex
-	background    map[string]context.CancelFunc
+	background    map[string]backgroundJob
 }
 
 func New(client upstream.Client) *Runtime {
@@ -32,7 +32,7 @@ func NewWithResponseStateStore(client upstream.Client, responseState responsesta
 	return &Runtime{
 		client:        client,
 		responseState: responseState,
-		background:    make(map[string]context.CancelFunc),
+		background:    make(map[string]backgroundJob),
 	}
 }
 
