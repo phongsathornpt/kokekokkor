@@ -199,6 +199,8 @@ type Response struct {
 	CreatedAt          int64
 	PreviousResponseID string
 	ConversationID     string
+	Background         bool
+	Store              bool
 	Model              string
 	Content            []ContentBlock
 	StopReason         StopReason
