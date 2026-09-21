@@ -29,8 +29,10 @@ kokekokkor currently includes:
 - translated OpenAI Realtime -> Gemini Live sessions for portable text, function tools, and raw PCM16 audio
 - provider API-key auth plus OAuth/PKCE profiles with refreshable persisted credentials
 - encrypted SQLite credential persistence with key rotation support
-- SQLite-backed provider/routing catalog management
-- HTMX admin UI with authenticated sessions, CSRF protection, provider CRUD, route edits, credential controls, and OAuth connect/disconnect
+- SQLite-backed and In-Memory provider/routing catalog management
+- HTMX admin UI with ProMax dark obsidian theme, sticky sidebar navigation, authenticated sessions, CSRF protection, provider CRUD, route edits, credential controls, and OAuth connect/disconnect
+- type-safe `a-h/templ` components and compiled Tailwind CSS v4 embedded via Go `embed.FS`
+- public Go SDK (`pkg/sdk`) with client options, health checks, OpenAI Chat Completions, and Anthropic Messages support
 - request correlation IDs, structured access logs, liveness/readiness endpoints, and graceful shutdown
 
 Unsupported cross-protocol semantics fail explicitly rather than being silently discarded. Cross-protocol support is treated as complete when a semantic is either losslessly mapped or deliberately rejected. Translated Responses state is gateway-hosted for portable transcript state; opaque provider continuation material, provider-local files, provider UI payloads, and incompatible Realtime controls remain native-passthrough territory.
@@ -47,6 +49,15 @@ export KOKEKOKKOR_API_KEY=your-local-gateway-key
 go run ./cmd/kokekokkor
 ```
 
+### Live Reload Development
+
+Kokekokkor supports rapid live reloading for Go sources, `templ` components, and Tailwind CSS styles using [Air](https://github.com/air-verse/air):
+
+```bash
+# Start live reload dev server (watches Go, templ, CSS):
+make dev
+```
+
 Point an OpenAI-compatible client at `http://localhost:8080/v1` and use `KOKEKOKKOR_API_KEY` as the client-facing bearer token.
 
 Anthropic and Gemini can be enabled alongside OpenAI-compatible providers:
@@ -60,6 +71,66 @@ export KOKEKOKKOR_GEMINI_API_KEY=your-gemini-key
 ```
 
 Native traffic keeps its native protocol and streaming format. Gateway credentials are stripped and replaced with the selected upstream provider credential before forwarding.
+
+## Go SDK (`pkg/sdk`)
+
+Kokekokkor provides a pure Go SDK for easy integration with your services:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/phongsathornpt/kokekokkor/pkg/sdk"
+)
+
+func main() {
+	client, err := sdk.New("http://localhost:8080", sdk.WithAPIKey("your-gateway-key"))
+	if err != nil {
+		log.Fatalf("failed to create client: %v", err)
+	}
+
+	// 1. Health checks
+	live, err := client.Live(context.Background())
+	if err != nil {
+		log.Fatalf("gateway not live: %v", err)
+	}
+	fmt.Printf("Gateway status: %s\n", live.Status)
+
+	// 2. OpenAI-compatible Chat Completions
+	chatResp, err := client.ChatCompletion(context.Background(), &sdk.ChatCompletionRequest{
+		Model: "gpt-4o",
+		Messages: []sdk.ChatMessage{
+			{Role: sdk.RoleUser, Content: "Hello gateway!"},
+		},
+	})
+	if err != nil {
+		log.Fatalf("chat completion error: %v", err)
+	}
+	fmt.Printf("Chat: %s\n", chatResp.Choices[0].Message.Content)
+
+	// 3. Anthropic Messages
+	anthropicResp, err := client.Messages(context.Background(), &sdk.MessagesRequest{
+		Model: "claude-3-5-sonnet-20241022",
+		Messages: []sdk.AnthropicMessage{
+			{
+				Role: "user",
+				Content: []sdk.ContentBlock{
+					{Type: "text", Text: "Hello Claude!"},
+				},
+			},
+		},
+		MaxTokens: 500,
+	})
+	if err != nil {
+		log.Fatalf("anthropic error: %v", err)
+	}
+	fmt.Printf("Claude: %s\n", anthropicResp.Content[0].Text)
+}
+```
 
 ## Multi-provider routing
 
@@ -121,10 +192,12 @@ OAuth uses authorization-code + PKCE and persisted token sets. Configure the pub
 
 ```text
 KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL
+KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID
+KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID
 KOKEKOKKOR_OAUTH_PROFILES_JSON
 ```
 
-`KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID` remains available as a backward-compatible Gemini shorthand. Generic profiles may provide explicit authorization/token endpoints, scopes, and authorization parameters. Refreshed access tokens are persisted and used for native and translated provider calls; configured API keys remain the fallback when no OAuth token is available.
+`KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID` enables OpenAI Codex / ChatGPT PKCE OAuth (set to `default` or `app_EMoamEEZ73f0CkXaXp7hrann`). In `KOKEKOKKOR_OAUTH_PROFILES_JSON`, use `"kind": "codex"` or `"kind": "chatgpt"` with optional `client_id` and `provider_id`. `KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID` remains available as a Gemini shorthand (`"kind": "gemini"`). Generic profiles may provide explicit authorization/token endpoints, scopes, and authorization parameters. Refreshed access tokens are persisted and used for native and translated provider calls; configured API keys remain the fallback when no OAuth token is available.
 
 ## Core configuration
 
@@ -148,6 +221,8 @@ KOKEKOKKOR_OAUTH_PROFILES_JSON
 | `KOKEKOKKOR_ADMIN_ENABLED` | `true` | Enable or disable the admin dashboard |
 | `KOKEKOKKOR_ADMIN_PASSWORD` | `admin` (or gateway API key) | Admin login password |
 | `KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL` | empty | Public base URL used for OAuth callbacks |
+| `KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID` | empty | OpenAI Codex / ChatGPT OAuth public client ID (`default` supported) |
+| `KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID` | empty | Gemini OAuth client ID shorthand |
 | `KOKEKOKKOR_OAUTH_PROFILES_JSON` | empty | OAuth profile definitions |
 | `KOKEKOKKOR_CREDENTIAL_KEYS_JSON` | empty | Versioned base64 encryption keys |
 | `KOKEKOKKOR_CREDENTIAL_ACTIVE_KEY_VERSION` | empty | Active credential encryption key version |
@@ -166,20 +241,70 @@ make build
 
 `make fuzz` runs each protocol request decoder fuzz target for 10 seconds by default; override with `FUZZ_TIME=30s make fuzz` for a longer local pass. CI enforces `gofmt`, `go vet ./...`, `go test -race ./...`, a short mutation-based fuzz smoke pass, and `go build ./...` on pull requests.
 
-## Architecture
+## Architecture & Project Structure
+
+The codebase is organized according to Clean Architecture principles:
+
+```text
+kokekokkor/
+├── cmd/
+│   └── kokekokkor/               # Main application entrypoint
+├── pkg/
+│   └── sdk/                      # Public Go SDK for Kokekokkor gateway & admin
+│       ├── client.go             # Client initialization, options, health checks
+│       ├── chat.go               # OpenAI-compatible /v1/chat/completions API
+│       ├── messages.go           # Anthropic /v1/messages API
+│       └── client_test.go        # Unit tests with httptest
+├── web/                          # Web presentation assets (embedded via embed.FS)
+│   ├── web.go                    # embed.FS filesystem & typed Render helpers
+│   ├── types.go                  # Typed view models (DashboardData, ProviderView, etc.)
+│   ├── *.templ                   # Type-safe templ components (Layout, Dashboard, Login, Sidebar)
+│   └── static/                   # Compiled CSS (Tailwind v4) and static brand assets
+└── internal/
+    ├── domain/                   # Enterprise Business Rules (Entities & Value Objects)
+    │   ├── catalog/              # Provider & route models
+    │   ├── credential/           # Credential references & kinds
+    │   ├── llm/                  # Canonical LLM IR (Request, Response, Blocks)
+    │   ├── oauth/                # OAuth tokens & profile models
+    │   └── provider/             # Target, Protocol, & Auth definitions
+    ├── usecase/                  # Application use cases & business workflows
+    │   ├── catalog/              # Provider, Route, and Default management use cases
+    │   ├── credential/           # Keyring & encrypted credential use cases (singular)
+    │   ├── oauth/                # PKCE flow orchestration & token lifecycle
+    │   ├── routing/              # Lock-free atomic routing & fallback planning
+    │   ├── translation/          # Cross-protocol translation & streaming
+    │   └── upstream/             # Upstream caller contracts & error models
+    ├── repository/               # Data access layer
+    │   ├── sqlite/               # Pure-Go SQLite persistence implementations
+    │   └── memory/               # In-memory repositories for testing/ephemeral use
+    ├── handler/                  # Delivery layer (HTTP & WebSocket)
+    │   ├── admin/                # Admin dashboard & session handlers
+    │   ├── oauth/                # OAuth callback & authorize handlers
+    │   ├── proxy/                # HTTP & WebSocket delivery handlers & gateway server
+    │   └── middleware/           # Auth, access logging, security headers, body limits
+    ├── protocol/                 # Wire protocol codecs & serializers (OpenAI, Anthropic, Gemini, SSE)
+    ├── provider/                 # Outbound upstream provider adapters
+    ├── security/secretbox/       # AES-256 Keyring cryptographic infrastructure
+    ├── translator/               # Cross-protocol streaming and runtime bridges
+    ├── transport/                # Low-level network adapters (upstreamhttp, websocket)
+    ├── bootstrap/                # Dependency wiring & container initialization
+    └── config/                   # Configuration parsing & validation
+```
+
+### Data & Request Flow
 
 ```text
 client
-  -> HTTP / WebSocket transport / protocol auth
+  -> HTTP / WebSocket transport / protocol auth (internal/handler/middleware)
   -> request correlation / access logging
-  -> protocol handler
-  -> immutable routing plan
+  -> delivery handler (internal/handler/proxy)
+  -> immutable routing plan (internal/usecase/routing)
        same protocol
          -> transparent reverse proxy
        different HTTP protocol
-         -> decode wire request
-         -> canonical semantic IR
-         -> compatibility policy
+         -> decode wire request (internal/protocol/*)
+         -> canonical semantic IR (internal/domain/llm)
+         -> compatibility policy (internal/usecase/translation)
          -> encode upstream request
          -> upstream HTTP
               non-stream -> buffered response translation
@@ -191,3 +316,4 @@ client
 ```
 
 Native passthrough is the fidelity path. Cross-protocol translation is intentionally conservative: exact semantics are preserved where a real mapping exists, and everything else is rejected rather than approximated invisibly.
+

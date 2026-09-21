@@ -6,14 +6,15 @@ import (
 	"log/slog"
 	"net/http"
 
-	appoauth "github.com/phongsathornpt/kokekokkor/internal/application/oauth"
 	"github.com/phongsathornpt/kokekokkor/internal/config"
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
-	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/persistence/sqlite"
+	domainprovider "github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/handler/oauth"
 	provideroauth "github.com/phongsathornpt/kokekokkor/internal/provider/oauth"
+	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/repository/sqlite"
 	"github.com/phongsathornpt/kokekokkor/internal/security/secretbox"
-	"github.com/phongsathornpt/kokekokkor/internal/transport/oauthhttp"
+	appoauth "github.com/phongsathornpt/kokekokkor/internal/usecase/oauth"
 )
 
 type oauthRuntime struct {
@@ -80,6 +81,19 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 			return oauthRuntime{}, err
 		}
 	}
+	if oauthConfig.CodexClientID != "" {
+		providerID := defaultOpenAIProviderID(cfg, snapshot)
+		profile, err := provideroauth.CodexProfile(provideroauth.ProfileOptions{
+			ProviderID: providerID,
+			ClientID:   oauthConfig.CodexClientID,
+		})
+		if err != nil {
+			return oauthRuntime{}, err
+		}
+		if err := addProfile(profile); err != nil {
+			return oauthRuntime{}, err
+		}
+	}
 	for _, configuredProfile := range oauthConfig.Profiles {
 		options := provideroauth.ProfileOptions{
 			ProviderID:          configuredProfile.ProviderID,
@@ -90,9 +104,12 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 			AuthorizationParams: configuredProfile.AuthorizationParams,
 		}
 		var profile domainoauth.Provider
-		if configuredProfile.Kind == "gemini" {
+		switch configuredProfile.Kind {
+		case "gemini":
 			profile, err = provideroauth.GeminiProfile(options)
-		} else {
+		case "codex", "chatgpt":
+			profile, err = provideroauth.CodexProfile(options)
+		default:
 			profile, err = provideroauth.GenericProfile(options)
 		}
 		if err != nil {
@@ -114,4 +131,19 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 		tokens:       tokens,
 		providerIDs:  providerIDs,
 	}, nil
+}
+
+func defaultOpenAIProviderID(cfg config.Config, snapshot domaincatalog.Snapshot) string {
+	if cfg.DefaultProviderID != "" {
+		return cfg.DefaultProviderID
+	}
+	if id, ok := snapshot.Defaults[domainprovider.ProtocolOpenAI]; ok && id != "" {
+		return id
+	}
+	for _, p := range snapshot.Providers {
+		if p.Protocol == domainprovider.ProtocolOpenAI {
+			return p.ID
+		}
+	}
+	return "openai"
 }

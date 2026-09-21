@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const DefaultCodexClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+
 type OAuthProfile struct {
 	Kind                string            `json:"kind,omitempty"`
 	ProviderID          string            `json:"provider_id"`
@@ -21,6 +23,7 @@ type OAuthProfile struct {
 type OAuth struct {
 	PublicBaseURL  string
 	GeminiClientID string
+	CodexClientID  string
 	Profiles       []OAuthProfile
 }
 
@@ -28,6 +31,10 @@ func LoadOAuth() (OAuth, bool, error) {
 	cfg := OAuth{
 		PublicBaseURL:  strings.TrimRight(strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL")), "/"),
 		GeminiClientID: strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID")),
+		CodexClientID:  strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID")),
+	}
+	if cfg.CodexClientID == "default" || cfg.CodexClientID == "true" {
+		cfg.CodexClientID = DefaultCodexClientID
 	}
 	if raw := strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_PROFILES_JSON")); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &cfg.Profiles); err != nil {
@@ -43,8 +50,16 @@ func LoadOAuth() (OAuth, bool, error) {
 			profile.ClientID = strings.TrimSpace(profile.ClientID)
 			profile.AuthorizationURL = strings.TrimSpace(profile.AuthorizationURL)
 			profile.TokenURL = strings.TrimSpace(profile.TokenURL)
-			if profile.Kind != "generic" && profile.Kind != "gemini" {
+			if profile.Kind != "generic" && profile.Kind != "gemini" && profile.Kind != "codex" && profile.Kind != "chatgpt" {
 				return OAuth{}, false, fmt.Errorf("OAuth profile %d has unsupported kind %q", i, profile.Kind)
+			}
+			if profile.Kind == "codex" || profile.Kind == "chatgpt" {
+				if profile.ClientID == "" || profile.ClientID == "default" || profile.ClientID == "public" {
+					profile.ClientID = DefaultCodexClientID
+				}
+				if profile.ProviderID == "" {
+					profile.ProviderID = "openai"
+				}
 			}
 			if profile.ProviderID == "" || profile.ClientID == "" {
 				return OAuth{}, false, fmt.Errorf("OAuth profile %d requires provider_id and client_id", i)
@@ -55,14 +70,14 @@ func LoadOAuth() (OAuth, bool, error) {
 		}
 	}
 
-	if cfg.PublicBaseURL == "" && cfg.GeminiClientID == "" && len(cfg.Profiles) == 0 {
+	if cfg.PublicBaseURL == "" && cfg.GeminiClientID == "" && cfg.CodexClientID == "" && len(cfg.Profiles) == 0 {
 		return OAuth{}, false, nil
 	}
 	if cfg.PublicBaseURL == "" {
 		return OAuth{}, false, fmt.Errorf("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL is required when OAuth is enabled")
 	}
-	if cfg.GeminiClientID == "" && len(cfg.Profiles) == 0 {
-		return OAuth{}, false, fmt.Errorf("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID or KOKEKOKKOR_OAUTH_PROFILES_JSON is required when OAuth is enabled")
+	if cfg.GeminiClientID == "" && cfg.CodexClientID == "" && len(cfg.Profiles) == 0 {
+		return OAuth{}, false, fmt.Errorf("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID, KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID, or KOKEKOKKOR_OAUTH_PROFILES_JSON is required when OAuth is enabled")
 	}
 	parsed, err := url.Parse(cfg.PublicBaseURL)
 	if err != nil || parsed.Host == "" {

@@ -1,0 +1,488 @@
+package web
+
+import (
+	"fmt"
+	"strconv"
+)
+
+templ Dashboard(data DashboardData) {
+	@Layout("kokekokkor admin") {
+		<div class="flex min-h-screen w-full">
+			@Sidebar(data)
+
+			<main class="flex-1 min-w-0 p-6 md:p-8 lg:p-10 max-w-7xl">
+				<!-- Top Bar -->
+				<div class="flex items-center justify-between pb-6 mb-8 border-b border-[#1a1d25]">
+					<div class="flex items-center gap-2 text-xs text-gray-400">
+						<span>Console</span>
+						<span class="text-gray-600">/</span>
+						<span class="font-medium text-gray-200">Gateway Configuration</span>
+					</div>
+					<div class="flex items-center gap-2 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+						<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+						Gateway Active
+					</div>
+				</div>
+
+				<!-- Stats / Overview Bar -->
+				<section id="overview" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+					<div class="bg-[#12141a] border border-[#262933] rounded-xl p-4 flex items-center gap-3.5">
+						<div class="w-10 h-10 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0">
+							@IconServer("w-5 h-5")
+						</div>
+						<div>
+							<div class="text-xs font-medium text-gray-400">Providers</div>
+							<div class="text-sm font-bold text-white mt-0.5">{ strconv.Itoa(len(data.Providers)) } configured</div>
+						</div>
+					</div>
+					<div class="bg-[#12141a] border border-[#262933] rounded-xl p-4 flex items-center gap-3.5">
+						<div class="w-10 h-10 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center justify-center shrink-0">
+							@IconRoute("w-5 h-5")
+						</div>
+						<div>
+							<div class="text-xs font-medium text-gray-400">Model Routes</div>
+							<div class="text-sm font-bold text-white mt-0.5">{ strconv.Itoa(len(data.Routes)) } active</div>
+						</div>
+					</div>
+					<div class="bg-[#12141a] border border-[#262933] rounded-xl p-4 flex items-center gap-3.5">
+						<div class="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+							@IconShieldCheck("w-5 h-5")
+						</div>
+						<div>
+							<div class="text-xs font-medium text-gray-400">OAuth / PKCE</div>
+							<div class="text-sm font-bold text-white mt-0.5">AES-256 sealed</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- Alert Banner for HTMX feedback -->
+				<div id="alert-banner" role="alert" aria-live="polite"></div>
+
+				<!-- Providers Section -->
+				<section id="providers" class="mb-10">
+					<div class="flex items-center gap-2 mb-4">
+						@IconServer("w-5 h-5 text-indigo-400")
+						<h2 class="text-base font-bold text-white">Providers</h2>
+					</div>
+
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+						for _, p := range data.Providers {
+							<section class="bg-[#12141a] border border-[#262933] rounded-xl p-5 flex flex-col gap-4">
+								<div class="flex items-center justify-between pb-3 border-b border-[#1a1d25]">
+									<div class="flex items-center gap-2 min-w-0">
+										if p.Protocol == "openai" {
+											@IconOpenAI("w-5 h-5 text-emerald-400 shrink-0")
+										} else if p.Protocol == "anthropic" {
+											@IconAnthropic("w-5 h-5 text-orange-400 shrink-0")
+										} else if p.Protocol == "gemini" {
+											@IconGemini("w-5 h-5 text-sky-400 shrink-0")
+										} else {
+											@IconServer("w-5 h-5 text-gray-400 shrink-0")
+										}
+										<strong class="text-sm font-semibold text-white truncate">{ p.ID }</strong>
+									</div>
+									<span class={ "text-[11px] font-semibold px-2 py-0.5 rounded-md border", providerTagClass(p.Protocol) }>{ p.Protocol }</span>
+								</div>
+
+								<!-- Status Row -->
+								<div class="flex items-center justify-between text-xs">
+									<span class="text-gray-400">Status</span>
+									<div class="flex items-center gap-2">
+										if p.Enabled {
+											<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+												<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+												● enabled
+											</span>
+										} else {
+											<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20">
+												<span class="w-1.5 h-1.5 rounded-full bg-gray-500"></span>
+												○ disabled
+											</span>
+										}
+										if data.Editable {
+											<form hx-post="/admin/providers/toggle">
+												<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+												<input type="hidden" name="provider_id" value={ p.ID }/>
+												<input type="hidden" name="enabled" value={ strconv.FormatBool(!p.Enabled) }/>
+												<button type="submit" class="inline-flex items-center gap-1 px-2 py-1 bg-[#181b24] hover:bg-[#222734] border border-[#262933] text-gray-300 text-xs font-medium rounded-lg transition-colors cursor-pointer">
+													@IconPower("w-3 h-3")
+													if p.Enabled {
+														Disable
+													} else {
+														Enable
+													}
+												</button>
+											</form>
+										}
+									</div>
+								</div>
+
+								<!-- API Key Status Row -->
+								<div class="flex items-center justify-between text-xs">
+									<span class="text-gray-400">API key</span>
+									<div class="flex items-center gap-1.5">
+										if p.APIKey {
+											@IconKey("w-3.5 h-3.5 text-emerald-400")
+											<span class="text-emerald-400 font-medium">configured</span>
+										} else {
+											@IconKey("w-3.5 h-3.5 text-gray-500")
+											<span class="text-gray-500">not configured</span>
+										}
+									</div>
+								</div>
+
+								<!-- OAuth Row -->
+								<div class="flex items-center justify-between text-xs">
+									<span class="text-gray-400">OAuth</span>
+									<span class="text-gray-300">
+										if p.OAuthConnected {
+											connected
+										} else if p.OAuthAvailable {
+											not connected
+										} else {
+											unavailable
+										}
+									</span>
+								</div>
+
+								<!-- Base URL -->
+								<div class="text-xs">
+									<label class="block text-gray-400 mb-1">Base URL</label>
+									<code class="block w-full bg-[#0d0e12] border border-[#262933] rounded-lg px-2.5 py-1.5 font-mono text-[11px] text-gray-300 truncate">{ p.BaseURL }</code>
+								</div>
+
+								<!-- OAuth Actions Panel -->
+								if p.OAuthAvailable {
+									<div class="pt-2 border-t border-[#1a1d25] flex items-center justify-between text-xs">
+										if p.OAuthConnected {
+											<div class="inline-flex items-center gap-1.5 text-emerald-400 font-medium text-xs">
+												@IconShieldCheck("w-4 h-4")
+												<span>OAuth connected</span>
+											</div>
+											<form hx-delete={ "/admin/oauth/" + p.ID }>
+												<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+												<button type="submit" class="inline-flex items-center gap-1 px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-medium rounded-lg transition-colors cursor-pointer" hx-confirm={ fmt.Sprintf("Disconnect OAuth for %s?", p.ID) }>
+													@IconTrash("w-3 h-3")
+													Disconnect OAuth
+												</button>
+											</form>
+										} else {
+											<div class="inline-flex items-center gap-1.5 text-amber-400 font-medium text-xs">
+												@IconShield("w-4 h-4")
+												<span>OAuth ready</span>
+											</div>
+											<a href={ templ.SafeURL("/oauth/" + p.ID + "/start") } class="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg transition-colors shadow-sm shadow-indigo-600/30">
+												Connect OAuth
+												@IconExternal("w-3 h-3")
+											</a>
+										}
+									</div>
+								}
+
+								<!-- Credential Editing -->
+								if data.CredentialEditable {
+									<div class="pt-2 border-t border-[#1a1d25] flex flex-col gap-2">
+										<form class="flex flex-col gap-1.5" hx-post="/admin/credentials/api-key">
+											<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+											<input type="hidden" name="provider_id" value={ p.ID }/>
+											<label for={ "api-key-" + p.ID } class="block text-xs font-medium text-gray-400">API Key</label>
+											<div class="flex items-center gap-2">
+												<input id={ "api-key-" + p.ID } class="flex-1 bg-[#0d0e12] border border-[#262933] focus:border-indigo-500 rounded-lg px-2.5 py-1 text-xs text-white placeholder-gray-500 outline-none" type="password" name="api_key" placeholder="replace API key" autocomplete="new-password" required/>
+												<button type="submit" class="inline-flex items-center gap-1 px-2.5 py-1 bg-[#181b24] hover:bg-[#222734] border border-[#262933] text-gray-200 text-xs font-medium rounded-lg transition-colors cursor-pointer shrink-0">
+													@IconSave("w-3 h-3 text-indigo-400")
+													Save key
+												</button>
+											</div>
+										</form>
+										if p.APIKey {
+											<form hx-post="/admin/credentials/api-key/delete" hx-confirm={ fmt.Sprintf("Remove API key for %s?", p.ID) }>
+												<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+												<input type="hidden" name="provider_id" value={ p.ID }/>
+												<button type="submit" class="inline-flex items-center gap-1 px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-[11px] font-medium rounded-lg transition-colors cursor-pointer">
+													@IconTrash("w-3 h-3")
+													Remove API key
+												</button>
+											</form>
+										}
+									</div>
+								}
+
+								<!-- Provider Config Drawer -->
+								if data.Editable {
+									<details class="pt-2 border-t border-[#1a1d25] group text-xs">
+										<summary class="flex items-center gap-1.5 text-gray-400 hover:text-white cursor-pointer select-none py-1">
+											@IconSliders("w-3.5 h-3.5 text-indigo-400")
+											<span>Configure provider</span>
+										</summary>
+										<div class="pt-3 flex flex-col gap-3">
+											<form class="flex flex-col gap-2.5" hx-post="/admin/providers/update">
+												<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+												<input type="hidden" name="provider_id" value={ p.ID }/>
+												<div>
+													<label for={ "edit-protocol-" + p.ID } class="block text-gray-400 mb-1">Protocol</label>
+													<select id={ "edit-protocol-" + p.ID } name="protocol" required class="w-full bg-[#0d0e12] border border-[#262933] focus:border-indigo-500 rounded-lg px-2.5 py-1 text-xs text-white outline-none">
+														<option value="openai" selected?={ p.Protocol == "openai" }>openai</option>
+														<option value="anthropic" selected?={ p.Protocol == "anthropic" }>anthropic</option>
+														<option value="gemini" selected?={ p.Protocol == "gemini" }>gemini</option>
+													</select>
+												</div>
+												<div>
+													<label for={ "edit-baseurl-" + p.ID } class="block text-gray-400 mb-1">Base URL</label>
+													<input id={ "edit-baseurl-" + p.ID } name="base_url" value={ p.BaseURL } required class="w-full bg-[#0d0e12] border border-[#262933] focus:border-indigo-500 rounded-lg px-2.5 py-1 text-xs text-white outline-none"/>
+												</div>
+												<div>
+													<label for={ "edit-enabled-" + p.ID } class="block text-gray-400 mb-1">Status</label>
+													<select id={ "edit-enabled-" + p.ID } name="enabled" class="w-full bg-[#0d0e12] border border-[#262933] focus:border-indigo-500 rounded-lg px-2.5 py-1 text-xs text-white outline-none">
+														<option value="true" selected?={ p.Enabled }>enabled</option>
+														<option value="false" selected?={ !p.Enabled }>disabled</option>
+													</select>
+												</div>
+												<button type="submit" class="inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-[#181b24] hover:bg-[#222734] border border-[#262933] text-gray-200 text-xs font-medium rounded-lg transition-colors cursor-pointer">
+													@IconSave("w-3.5 h-3.5 text-indigo-400")
+													Save provider
+												</button>
+											</form>
+											<form hx-post="/admin/providers/delete" hx-confirm={ fmt.Sprintf("Delete provider %s? Defaults and routes must be cleared first.", p.ID) }>
+												<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+												<input type="hidden" name="provider_id" value={ p.ID }/>
+												<button type="submit" class="w-full inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-medium rounded-lg transition-colors cursor-pointer">
+													@IconTrash("w-3.5 h-3.5")
+													Delete provider
+												</button>
+											</form>
+										</div>
+									</details>
+								}
+							</section>
+						}
+					</div>
+
+					<!-- Add Provider Form -->
+					if data.Editable {
+						<div class="mt-6 bg-[#12141a] border border-[#262933] rounded-xl p-5">
+							<div class="flex items-center gap-2 mb-3">
+								@IconPlus("w-4 h-4 text-indigo-400")
+								<h3 class="text-sm font-bold text-white">Add provider</h3>
+							</div>
+							<form class="flex flex-col gap-4" hx-post="/admin/providers">
+								<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+								<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+									<div>
+										<label for="new-provider-id">Provider ID</label>
+										<input id="new-provider-id" name="provider_id" placeholder="provider id" required/>
+									</div>
+									<div>
+										<label for="new-protocol">Protocol</label>
+										<select id="new-protocol" name="protocol" required>
+											<option value="openai">openai</option>
+											<option value="anthropic">anthropic</option>
+											<option value="gemini">gemini</option>
+										</select>
+									</div>
+									<div>
+										<label for="new-base-url">Base URL</label>
+										<input id="new-base-url" class="grow" name="base_url" placeholder="https://upstream.example" required/>
+									</div>
+									<div>
+										<label for="new-enabled">Status</label>
+										<select id="new-enabled" name="enabled">
+											<option value="true" selected>enabled</option>
+											<option value="false">disabled</option>
+										</select>
+									</div>
+								</div>
+								<div>
+									<button type="submit" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm shadow-indigo-600/30 transition-colors cursor-pointer">
+										@IconPlus("w-3.5 h-3.5")
+										Add provider
+									</button>
+								</div>
+							</form>
+						</div>
+					}
+				</section>
+
+				<!-- Protocol Defaults Section -->
+				<section id="defaults" class="mb-10">
+					<div class="flex items-center gap-2 mb-4">
+						@IconSliders("w-5 h-5 text-indigo-400")
+						<h2 class="text-base font-bold text-white">Protocol defaults</h2>
+					</div>
+
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+						for _, def := range data.Defaults {
+							<div class="bg-[#12141a] border border-[#262933] rounded-xl p-5 flex flex-col gap-3">
+								<div class="flex items-center justify-between pb-3 border-b border-[#1a1d25]">
+									<div class="flex items-center gap-2">
+										if def.Protocol == "openai" {
+											@IconOpenAI("w-4 h-4 text-emerald-400")
+										} else if def.Protocol == "anthropic" {
+											@IconAnthropic("w-4 h-4 text-orange-400")
+										} else if def.Protocol == "gemini" {
+											@IconGemini("w-4 h-4 text-sky-400")
+										} else {
+											@IconServer("w-4 h-4 text-gray-400")
+										}
+										<span class="text-xs font-semibold text-white">{ def.Protocol }</span>
+									</div>
+									<span class="text-[11px] font-mono px-2 py-0.5 rounded bg-[#181b24] text-gray-300 border border-[#262933]">
+										if def.ProviderID != "" {
+											{ def.ProviderID }
+										} else {
+											none
+										}
+									</span>
+								</div>
+
+								if data.Editable {
+									<form class="flex flex-col gap-1.5 mt-1" hx-post="/admin/defaults">
+										<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+										<input type="hidden" name="protocol" value={ def.Protocol }/>
+										<label for={ "default-select-" + def.Protocol }>Default provider</label>
+										<div class="flex items-center gap-2">
+											<select id={ "default-select-" + def.Protocol } class="grow" name="provider_id">
+												<option value="" selected?={ def.ProviderID == "" }>-- none (clear) --</option>
+												for _, eligible := range def.EligibleProviders {
+													<option value={ eligible } selected?={ eligible == def.ProviderID }>{ eligible }</option>
+												}
+											</select>
+											<button type="submit" class="inline-flex items-center gap-1 px-2.5 py-1 bg-[#181b24] hover:bg-[#222734] border border-[#262933] text-gray-200 text-xs font-medium rounded-lg transition-colors cursor-pointer shrink-0">
+												@IconSave("w-3 h-3 text-indigo-400")
+												Apply
+											</button>
+										</div>
+									</form>
+								}
+							</div>
+						}
+					</div>
+				</section>
+
+				<!-- Model Routes Section -->
+				<section id="routes" class="mb-10">
+					<div class="flex items-center gap-2 mb-4">
+						@IconRoute("w-5 h-5 text-indigo-400")
+						<h2 class="text-base font-bold text-white">Model routes</h2>
+					</div>
+
+					if len(data.Routes) > 0 {
+						<div class="flex flex-col gap-4">
+							for _, r := range data.Routes {
+								<div class="bg-[#12141a] border border-[#262933] rounded-xl p-5 flex flex-col gap-3">
+									<div class="flex items-center justify-between pb-2 border-b border-[#1a1d25]">
+										<div class="flex items-center gap-2">
+											@IconCube("w-4 h-4 text-indigo-400")
+											<strong class="text-sm font-semibold text-white">{ r.Model }</strong>
+										</div>
+										<span class="text-[11px] font-semibold px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+											{ strconv.Itoa(len(r.Targets)) } target{ targetPlural(len(r.Targets)) }
+										</span>
+									</div>
+
+									<!-- Pipeline visual -->
+									<div class="flex flex-col gap-1 text-xs">
+										<span class="text-gray-400 text-[11px] font-medium">Fallback Chain</span>
+										<div class="flex items-center flex-wrap gap-2 pt-1">
+											for idx, target := range r.Targets {
+												if idx > 0 {
+													@IconArrowRight("w-3.5 h-3.5 text-gray-500 shrink-0")
+												}
+												<span class="bg-[#181b24] border border-[#262933] px-2.5 py-1 text-xs font-mono text-gray-200 rounded-md shadow-inner">{ target }</span>
+											}
+										</div>
+									</div>
+
+									<ul class="sr-only">
+										for _, target := range r.Targets {
+											<li>{ target }</li>
+										}
+									</ul>
+
+									if data.Editable {
+										<div class="pt-2 border-t border-[#1a1d25] flex flex-col gap-2">
+											<form class="flex flex-col gap-1.5" hx-post="/admin/routes">
+												<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+												<input type="hidden" name="model" value={ r.Model }/>
+												<label for={ "route-targets-" + r.Model } class="block text-xs font-medium text-gray-400">Target chain (ordered attempts: <code>provider[:upstream-model], ...</code>)</label>
+												<div class="flex items-center gap-2">
+													<input id={ "route-targets-" + r.Model } class="flex-1 bg-[#0d0e12] border border-[#262933] focus:border-indigo-500 rounded-lg px-2.5 py-1 text-xs text-white outline-none" name="targets" value={ r.TargetSpec } required/>
+													<button type="submit" class="inline-flex items-center gap-1 px-2.5 py-1 bg-[#181b24] hover:bg-[#222734] border border-[#262933] text-gray-200 text-xs font-medium rounded-lg transition-colors cursor-pointer shrink-0">
+														@IconSave("w-3 h-3 text-indigo-400")
+														Apply
+													</button>
+												</div>
+											</form>
+											<form hx-post="/admin/routes/delete" hx-confirm={ fmt.Sprintf("Delete route %s?", r.Model) }>
+												<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+												<input type="hidden" name="model" value={ r.Model }/>
+												<button type="submit" class="inline-flex items-center gap-1 px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-medium rounded-lg transition-colors cursor-pointer">
+													@IconTrash("w-3 h-3")
+													Delete
+												</button>
+											</form>
+										</div>
+									}
+								</div>
+							}
+						</div>
+					} else {
+						<div class="bg-[#12141a] border border-[#262933] rounded-xl p-8 text-center">
+							<div class="text-sm text-gray-400">No model-specific routes configured.</div>
+						</div>
+					}
+
+					<!-- Add Route Form -->
+					if data.Editable {
+						<div class="mt-6 bg-[#12141a] border border-[#262933] rounded-xl p-5">
+							<div class="flex items-center gap-2 mb-3">
+								@IconPlus("w-4 h-4 text-indigo-400")
+								<h3 class="text-sm font-bold text-white">Add route</h3>
+							</div>
+							<form class="flex flex-col gap-4" hx-post="/admin/routes">
+								<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+									<div>
+										<label for="new-route-model" class="block text-gray-400 mb-1">Model alias</label>
+										<input id="new-route-model" name="model" placeholder="model" required class="w-full bg-[#0d0e12] border border-[#262933] focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"/>
+									</div>
+									<div>
+										<label for="new-route-targets" class="block text-gray-400 mb-1">Target chain (ordered attempts: <code>provider[:upstream-model], ...</code>)</label>
+										<input id="new-route-targets" name="targets" placeholder="provider[:upstream-model], ..." required class="w-full bg-[#0d0e12] border border-[#262933] focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"/>
+									</div>
+								</div>
+								<div>
+									<button type="submit" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm shadow-indigo-600/30 transition-colors cursor-pointer">
+										@IconPlus("w-3.5 h-3.5")
+										Add route
+									</button>
+								</div>
+							</form>
+						</div>
+					} else {
+						<p class="text-xs text-gray-500 mt-4">Catalog editing requires SQLite persistence.</p>
+					}
+				</section>
+			</main>
+		</div>
+	}
+}
+
+func providerTagClass(protocol string) string {
+	switch protocol {
+	case "openai":
+		return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+	case "anthropic":
+		return "bg-orange-500/10 text-orange-400 border-orange-500/20"
+	case "gemini":
+		return "bg-sky-500/10 text-sky-400 border-sky-500/20"
+	default:
+		return "bg-gray-500/10 text-gray-300 border-gray-500/20"
+	}
+}
+
+func targetPlural(n int) string {
+	if n != 1 {
+		return "s"
+	}
+	return ""
+}

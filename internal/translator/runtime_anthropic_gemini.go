@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net/http"
 
-	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
-	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 	anthropicProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/anthropic"
 	geminiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/gemini"
+	apptranslation "github.com/phongsathornpt/kokekokkor/internal/usecase/translation"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/upstream"
 )
 
 func (r *Runtime) AnthropicMessagesToGemini(ctx context.Context, target provider.Target, model string, header http.Header, body []byte) (upstream.Response, error) {

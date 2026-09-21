@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
 )
 
 type realtimeRouter struct {

@@ -23,14 +23,12 @@ Welcome to the **kokekokkor** codebase. This document serves as the authoritativ
 ```
 kokekokkor/
 ├── cmd/kokekokkor/               # Main executable entrypoint
+├── pkg/
+│   └── sdk/                      # Public Go SDK (Client, Chat Completions, Anthropic Messages)
+├── web/                          # Embedded web presentation assets (go:embed)
+│   ├── static/                   # Static CSS, JS, and image assets
+│   └── template/                 # HTML templates (admin dashboard, login)
 ├── internal/
-│   ├── application/              # Application use cases and routing logic
-│   │   ├── catalog/              # Catalog management service & repository contracts
-│   │   ├── credentials/          # Encrypted credential storage service
-│   │   ├── oauth/                # OAuth 2.0 PKCE flow & state machine
-│   │   ├── routing/              # Lock-free atomic routing table & fallback plans
-│   │   ├── translation/          # Compatibility validation & protocol mapping logic
-│   │   └── upstream/             # Upstream HTTP client interfaces & errors
 │   ├── bootstrap/                # Application initialization and dependency wiring
 │   ├── config/                   # Configuration parsing (env vars & JSON payloads)
 │   ├── domain/                   # Pure business domain entities (zero external deps)
@@ -40,22 +38,33 @@ kokekokkor/
 │   │   ├── oauth/                # OAuth tokens and provider profiles
 │   │   ├── provider/             # Target, Protocol, and Auth definitions
 │   │   └── responsestate/        # Response state & conversation transcript models
-│   ├── persistence/sqlite/       # Pure-Go SQLite persistence layer
-│   ├── protocol/                 # Wire protocol codecs & HTTP handlers
-│   │   ├── anthropic/            # Anthropic Messages wire codecs & handler
+│   ├── handler/                  # Delivery layer (HTTP & WebSocket)
+│   │   ├── admin/                # HTMX admin web dashboard & session handling
+│   │   ├── oauth/                # OAuth callback HTTP handlers
+│   │   ├── proxy/                # HTTP & WebSocket delivery handlers & gateway server
+│   │   └── middleware/           # Auth, access logging, request ID, security headers, body limits
+│   ├── protocol/                 # Wire protocol codecs & serializers
+│   │   ├── anthropic/            # Anthropic Messages wire codecs
 │   │   ├── gemini/               # Gemini generateContent & Live wire codecs
-│   │   ├── openai/               # OpenAI Chat, Responses, Realtime codecs & handler
+│   │   ├── openai/               # OpenAI Chat, Responses, Realtime codecs
 │   │   └── sse/                  # Server-Sent Events encoder & decoder
 │   ├── provider/                 # Provider-specific proxy handlers & OAuth exchangers
+│   ├── repository/               # Data access layer
+│   │   ├── sqlite/               # Pure-Go SQLite persistence repositories
+│   │   └── memory/               # In-memory repositories for testing & ephemeral use
 │   ├── security/secretbox/       # AES-GCM 256 credential envelope encryption
 │   ├── translator/               # Cross-protocol translation runtime, streaming & bridge
-│   └── transport/                # Network & transport adapters
-│       ├── adminhttp/            # HTMX admin web dashboard & session handling
-│       ├── httpserver/           # HTTP server, routing mux, auth middleware, logging
-│       ├── oauthhttp/            # OAuth callback HTTP handlers
-│       ├── realtime/             # OpenAI Realtime -> Gemini Live WebSocket bridge
-│       ├── upstreamhttp/         # Upstream HTTP client with auth token injection
-│       └── websocket/            # Pure-Go RFC 6455 WebSocket client/server
+│   ├── transport/                # Low-level network & transport adapters
+│   │   ├── realtime/             # OpenAI Realtime -> Gemini Live WebSocket bridge
+│   │   ├── upstreamhttp/         # Upstream HTTP client with auth token injection
+│   │   └── websocket/            # Pure-Go RFC 6455 WebSocket client/server
+│   └── usecase/                  # Application use cases and business workflows
+│       ├── catalog/              # Catalog management service & repository contracts
+│       ├── credential/           # Keyring & encrypted credential use cases (singular)
+│       ├── oauth/                # OAuth 2.0 PKCE flow & state machine
+│       ├── routing/              # Lock-free atomic routing table & fallback plans
+│       ├── translation/          # Compatibility validation & protocol mapping logic
+│       └── upstream/             # Upstream HTTP client interfaces & errors
 ```
 
 ---
@@ -72,13 +81,13 @@ When implementing features or refactoring, strictly maintain the following invar
 
 ### 3.2. Translation & Compatibility
 - Respect the canonical types in `internal/domain/llm`.
-- Reject unsupported features early in `internal/application/translation/compatibility.go`. Do not fabricate or mock missing fields (e.g. provider-specific continuation tokens, remote image downloads, opaque thinking signatures).
+- Reject unsupported features early in `internal/usecase/translation/compatibility.go`. Do not fabricate or mock missing fields (e.g. provider-specific continuation tokens, remote image downloads, opaque thinking signatures).
 - Bounded memory buffers: Stream buffering (e.g., refusal buffering via `stream_options.buffer_refusals`) must be bounded (maximum 8 MiB / 8,192 canonical events). Never allow unbounded buffers.
 
 ### 3.3. Security & Persistence
 - Credentials stored in SQLite must be sealed using `secretbox.Keyring.Seal`.
 - Additional Authenticated Data (AAD) must bind ciphertext to `(ProviderID, CredentialKind, KeyVersion)`.
-- The admin interface in `internal/transport/adminhttp` must preserve CSRF protection, secure cookie sessions, and HTTP security headers (`Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`). Never display raw secret keys in the UI.
+- The admin interface in `internal/handler/admin` must preserve CSRF protection, secure cookie sessions, and HTTP security headers (`Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`). Never display raw secret keys in the UI.
 
 ### 3.4. Concurrency & Pure Go Constraints
 - All WebSocket code uses `internal/transport/websocket` (RFC 6455). Do not import external WebSocket libraries.
@@ -95,6 +104,8 @@ Agents must run verification commands after every modification:
 
 | Task | Command | Description |
 | :--- | :--- | :--- |
+| **Live Reload Dev Server** | `make dev` | Starts Air live reload watching Go, templ, and Tailwind CSS |
+| **Web Assets Rebuild** | `make web` | Compiles minified Tailwind CSS and generates templ components |
 | **Run Unit Tests** | `make test` or `go test ./...` | Runs all repository unit & integration tests |
 | **Race Detection** | `make race` or `go test -race ./...` | Verifies concurrency safety |
 | **Code Formatting** | `gofmt -w .` | Enforces standard Go formatting |

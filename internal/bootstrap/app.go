@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
 	"github.com/phongsathornpt/kokekokkor/internal/config"
+	proxyHandler "github.com/phongsathornpt/kokekokkor/internal/handler/proxy"
 	anthropicProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/anthropic"
 	geminiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/gemini"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
@@ -17,9 +17,9 @@ import (
 	geminiProvider "github.com/phongsathornpt/kokekokkor/internal/provider/gemini"
 	"github.com/phongsathornpt/kokekokkor/internal/provider/openaicompat"
 	"github.com/phongsathornpt/kokekokkor/internal/translator"
-	"github.com/phongsathornpt/kokekokkor/internal/transport/httpserver"
 	realtimeTransport "github.com/phongsathornpt/kokekokkor/internal/transport/realtime"
 	"github.com/phongsathornpt/kokekokkor/internal/transport/upstreamhttp"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
 )
 
 type closer interface{ Close() error }
@@ -104,7 +104,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	geminiUpstream := geminiProvider.NewWithBearerTokenResolver(logger, oauth.bearerTokens)
 	geminiAPI := geminiProtocol.NewRoutedHandler(router, geminiTarget, geminiUpstream, crossProtocol)
 
-	server := httpserver.NewWithAdmin(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, oauth.handler, admin, logger)
+	server := proxyHandler.NewWithAdmin(cfg.HTTP.Addr, cfg.GatewayAPIKey, router.Ready, openAI, anthropicAPI, geminiAPI, oauth.handler, admin, logger)
 	return &App{server: server.HTTP, logger: logger, catalogStore: catalogStore}, nil
 }
 

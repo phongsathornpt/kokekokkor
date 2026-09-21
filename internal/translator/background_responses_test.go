@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/upstream"
 )
 
 func TestTranslatedBackgroundResponsesCompletesStoredResource(t *testing.T) {

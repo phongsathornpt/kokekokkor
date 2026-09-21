@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/upstream"
 )
 
 func TestOpenAIChatToGeminiTranslatesRequestAndResponse(t *testing.T) {

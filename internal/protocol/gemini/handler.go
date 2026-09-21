@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
 )
 
 const maxReplayBodyBytes = 64 << 20

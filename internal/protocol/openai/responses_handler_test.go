@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
-	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
-	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
+	apptranslation "github.com/phongsathornpt/kokekokkor/internal/usecase/translation"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/upstream"
 )
 
 func (s *stubCrossTranslator) OpenAIResponsesToAnthropic(_ context.Context, _ provider.Target, model string, _ http.Header, _ []byte) (upstream.Response, error) {

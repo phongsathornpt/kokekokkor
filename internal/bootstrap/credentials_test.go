@@ -10,7 +10,7 @@ import (
 	"github.com/phongsathornpt/kokekokkor/internal/config"
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
-	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/persistence/sqlite"
+	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/repository/sqlite"
 )
 
 func TestResolveCredentialsSeedsOnceAndPrefersPersistedValue(t *testing.T) {

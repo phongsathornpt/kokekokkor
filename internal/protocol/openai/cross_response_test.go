@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
-	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
+	apptranslation "github.com/phongsathornpt/kokekokkor/internal/usecase/translation"
 )
 
 func TestHandlerDoesNotFallbackAfterResponseTranslationFailure(t *testing.T) {
