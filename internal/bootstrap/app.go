@@ -90,6 +90,9 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 
 	bufferedUpstream := upstreamhttp.NewWithBearerTokenResolver(cfg.Anthropic.Version, oauth.bearerTokens)
 	crossProtocol := translator.New(bufferedUpstream)
+	if catalogStore != nil {
+		crossProtocol = translator.NewWithResponseStateStore(bufferedUpstream, catalogStore)
+	}
 
 	openAIUpstream := openaicompat.NewWithBearerTokenResolver(logger, oauth.bearerTokens)
 	realtimeBridge := realtimeTransport.NewGeminiBridge(oauth.bearerTokens)

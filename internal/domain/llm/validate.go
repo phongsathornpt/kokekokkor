@@ -60,6 +60,14 @@ func (r Request) Validate() error {
 	if r.ResponseFormat != nil && (len(r.ResponseFormat.JSONSchema) == 0 || !json.Valid(r.ResponseFormat.JSONSchema)) {
 		return fmt.Errorf("response format: invalid JSON schema")
 	}
+	if r.ResponseState != nil {
+		if r.ResponseState.PreviousResponseID != "" && r.ResponseState.ConversationID != "" {
+			return fmt.Errorf("response state: previous response and conversation are mutually exclusive")
+		}
+		if r.ResponseState.InstructionMessages < 0 || r.ResponseState.InstructionMessages > len(r.Messages) {
+			return fmt.Errorf("response state: invalid instruction boundary")
+		}
+	}
 	return nil
 }
 
