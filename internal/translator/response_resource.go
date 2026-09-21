@@ -28,6 +28,18 @@ func (r *Runtime) HandleStoredResponse(ctx context.Context, method, path string)
 			return 0, nil, true, err
 		}
 		if !cancelled {
+			if _, loadErr := r.responseState.LoadResponse(ctx, id); loadErr == nil {
+				payload, marshalErr := json.Marshal(map[string]any{
+					"error": map[string]any{
+						"message": "response " + id + " is not cancellable",
+						"type":    "invalid_request_error",
+						"code":    "response_not_cancellable",
+					},
+				})
+				return http.StatusBadRequest, payload, true, marshalErr
+			} else if !errors.Is(loadErr, responsestate.ErrNotFound) {
+				return 0, nil, true, loadErr
+			}
 			return 0, nil, false, nil
 		}
 		record, err := r.responseState.LoadResponse(ctx, id)
@@ -53,6 +65,12 @@ func (r *Runtime) HandleStoredResponse(ctx context.Context, method, path string)
 		}
 		return http.StatusOK, append([]byte(nil), record.Payload...), true, nil
 	case http.MethodDelete:
+		if cancelled, err := r.cancelBackgroundResponse(ctx, trimmed); err != nil {
+			return 0, nil, true, err
+		} else if cancelled {
+			// Cancellation removes the job before deletion so the worker cannot
+			// recreate a terminal response after the resource has been deleted.
+		}
 		if err := r.responseState.DeleteResponse(ctx, trimmed); errors.Is(err, responsestate.ErrNotFound) {
 			return 0, nil, false, nil
 		} else if err != nil {
