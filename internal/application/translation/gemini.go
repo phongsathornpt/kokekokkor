@@ -172,7 +172,9 @@ func checkOpenAIBlockForGemini(block llm.ContentBlock) error {
 			return unsupported("image", "Gemini translation currently accepts only inline base64 images")
 		}
 	case llm.DocumentBlock:
-		return unsupported("document", "OpenAI Chat document translation to Gemini is not implemented")
+		if value.Source.Type != llm.MediaSourceBase64 {
+			return unsupported("document", "Gemini cross-protocol document translation requires inline base64 data")
+		}
 	case llm.ReasoningBlock:
 		return unsupported("reasoning", "reasoning blocks cannot yet be translated to Gemini")
 	case llm.ToolCallBlock:

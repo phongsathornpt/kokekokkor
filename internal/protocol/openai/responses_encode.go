@@ -26,16 +26,28 @@ func EncodeResponsesResponse(response llm.Response) ([]byte, error) {
 		return nil, err
 	}
 	now := time.Now().Unix()
+	if response.CreatedAt != 0 {
+		now = response.CreatedAt
+	}
+	response.ID = NormalizeResponsesID(response.ID)
+	var conversation *responseConversation
+	if response.ConversationID != "" {
+		conversation = &responseConversation{ID: response.ConversationID}
+	}
 	wire := responseObject{
-		ID:                response.ID,
-		Object:            "response",
-		CreatedAt:         now,
-		Status:            status,
-		Error:             nil,
-		IncompleteDetails: incomplete,
-		Model:             response.Model,
-		Output:            output,
-		OutputText:        outputText,
+		ID:                 response.ID,
+		Object:             "response",
+		CreatedAt:          now,
+		Status:             status,
+		Error:              nil,
+		IncompleteDetails:  incomplete,
+		Model:              response.Model,
+		PreviousResponseID: response.PreviousResponseID,
+		Conversation:       conversation,
+		Background:         response.Background,
+		Store:              response.Store,
+		Output:             output,
+		OutputText:         outputText,
 		Usage: responseUsage{
 			InputTokens: response.Usage.InputTokens,
 			InputTokensDetails: responseInputTokenDetails{

@@ -15,10 +15,14 @@ type fakeClient struct {
 	response       upstream.Response
 	streamResponse upstream.StreamResponse
 	streamErr      error
+	do             func(context.Context, provider.Target, upstream.Request) (upstream.Response, error)
 }
 
-func (f *fakeClient) Do(_ context.Context, _ provider.Target, request upstream.Request) (upstream.Response, error) {
+func (f *fakeClient) Do(ctx context.Context, target provider.Target, request upstream.Request) (upstream.Response, error) {
 	f.request = request
+	if f.do != nil {
+		return f.do(ctx, target, request)
+	}
 	return f.response, nil
 }
 

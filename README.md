@@ -16,6 +16,7 @@ kokekokkor currently includes:
 - buffered and streaming OpenAI Chat Completions <-> Gemini `generateContent` translation
 - buffered and streaming Anthropic Messages <-> Gemini translation for the portable subset
 - buffered and streaming OpenAI Responses -> Anthropic/Gemini translation
+- gateway-hosted translated Responses storage, `previous_response_id` continuation, conversation resources, background execution, retrieval/deletion, and cancellation for the portable transcript subset
 - structured JSON Schema output mapping
 - tool calls/results, parallel-tool policy where representable, portable documents, and tool-error mapping where representable
 - reasoning effort controls and provider reasoning summaries into OpenAI Responses
@@ -32,7 +33,7 @@ kokekokkor currently includes:
 - HTMX admin UI with authenticated sessions, CSRF protection, provider CRUD, route edits, credential controls, and OAuth connect/disconnect
 - request correlation IDs, structured access logs, liveness/readiness endpoints, and graceful shutdown
 
-Unsupported cross-protocol semantics fail explicitly rather than being silently discarded. Cross-protocol support is treated as complete when a semantic is either losslessly mapped or deliberately rejected; provider-hosted state, provider-local files, provider UI payloads, and incompatible Realtime controls remain native-passthrough territory.
+Unsupported cross-protocol semantics fail explicitly rather than being silently discarded. Cross-protocol support is treated as complete when a semantic is either losslessly mapped or deliberately rejected. Translated Responses state is gateway-hosted for portable transcript state; opaque provider continuation material, provider-local files, provider UI payloads, and incompatible Realtime controls remain native-passthrough territory.
 
 ## Quick start
 

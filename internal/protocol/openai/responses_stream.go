@@ -37,6 +37,9 @@ type ResponsesStreamEncoder struct {
 	blocks             map[int]*responsesStreamBlock
 	allText            strings.Builder
 	refusalMode        bool
+	previousResponseID string
+	conversationID     string
+	store              bool
 }
 
 func NewResponsesStreamEncoder(w io.Writer, includeObfuscation bool) *ResponsesStreamEncoder {
@@ -49,6 +52,12 @@ func NewResponsesStreamEncoder(w io.Writer, includeObfuscation bool) *ResponsesS
 
 func (e *ResponsesStreamEncoder) SetRefusalMode(enabled bool) {
 	e.refusalMode = enabled
+}
+
+func (e *ResponsesStreamEncoder) SetState(previousResponseID, conversationID string, store bool) {
+	e.previousResponseID = previousResponseID
+	e.conversationID = conversationID
+	e.store = store
 }
 
 func (e *ResponsesStreamEncoder) Encode(event llm.StreamEvent) error {
@@ -86,7 +95,7 @@ func (e *ResponsesStreamEncoder) startResponse(event llm.StreamEvent) error {
 		return fmt.Errorf("Responses stream received duplicate response start")
 	}
 	e.started = true
-	e.id = responsesStreamID(event.ResponseID)
+	e.id = NormalizeResponsesID(event.ResponseID)
 	e.model = event.Model
 	e.createdAt = time.Now().Unix()
 
@@ -382,28 +391,38 @@ func (e *ResponsesStreamEncoder) snapshot(status string, incomplete any, complet
 		completedAt = &now
 	}
 	usage := encodeResponsesStreamUsage(e.latestUsage)
+	var previousResponseID any
+	if e.previousResponseID != "" {
+		previousResponseID = e.previousResponseID
+	}
+	var conversation *responseConversation
+	if e.conversationID != "" {
+		conversation = &responseConversation{ID: e.conversationID}
+	}
 	return responsesStreamSnapshot{
-		ID:                e.id,
-		Object:            "response",
-		CreatedAt:         e.createdAt,
-		CompletedAt:       completedAt,
-		Status:            status,
-		Error:             nil,
-		IncompleteDetails: incomplete,
-		Model:             e.model,
-		Output:            append([]responseOutputItem(nil), e.output...),
-		OutputText:        e.allText.String(),
-		Usage:             &usage,
-		ParallelToolCalls: true,
-		Reasoning:         map[string]any{"effort": nil, "summary": nil},
-		Store:             false,
-		Temperature:       1,
-		Text:              map[string]any{"format": map[string]any{"type": "text"}},
-		ToolChoice:        "auto",
-		Tools:             []any{},
-		TopP:              1,
-		Truncation:        "disabled",
-		Metadata:          map[string]string{},
+		ID:                 e.id,
+		Object:             "response",
+		CreatedAt:          e.createdAt,
+		CompletedAt:        completedAt,
+		Status:             status,
+		Error:              nil,
+		IncompleteDetails:  incomplete,
+		Model:              e.model,
+		Output:             append([]responseOutputItem(nil), e.output...),
+		OutputText:         e.allText.String(),
+		Usage:              &usage,
+		ParallelToolCalls:  true,
+		PreviousResponseID: previousResponseID,
+		Conversation:       conversation,
+		Reasoning:          map[string]any{"effort": nil, "summary": nil},
+		Store:              e.store,
+		Temperature:        1,
+		Text:               map[string]any{"format": map[string]any{"type": "text"}},
+		ToolChoice:         "auto",
+		Tools:              []any{},
+		TopP:               1,
+		Truncation:         "disabled",
+		Metadata:           map[string]string{},
 	}
 }
 
@@ -418,7 +437,7 @@ func (e *ResponsesStreamEncoder) addObfuscation(fields map[string]any) {
 	fields["obfuscation"] = base64.RawURLEncoding.EncodeToString(raw[:])
 }
 
-func responsesStreamID(upstreamID string) string {
+func NormalizeResponsesID(upstreamID string) string {
 	if strings.HasPrefix(upstreamID, "resp_") {
 		return upstreamID
 	}
