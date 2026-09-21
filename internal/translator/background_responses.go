@@ -87,6 +87,7 @@ func (r *Runtime) runBackgroundResponses(ctx context.Context, id string, plan re
 
 	upstreamResponse, response, err := work(ctx)
 	if ctx.Err() != nil {
+		r.setBackgroundStatus(id, "failed", ctx.Err().Error())
 		return
 	}
 	if err != nil {
