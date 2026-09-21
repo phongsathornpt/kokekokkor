@@ -98,23 +98,51 @@ func (r *Runtime) runBackgroundResponses(ctx context.Context, id string, plan re
 		return
 	}
 
+	job, ok := r.claimBackgroundJob(id)
+	if !ok {
+		return
+	}
+	job.cancel()
 	response.ID = id
 	response.PreviousResponseID = plan.state.PreviousResponseID
 	response.ConversationID = plan.state.ConversationID
 	response.Background = true
 	response.Store = true
 	if err := r.persistResponsesState(context.Background(), plan, response); err != nil {
-		r.setBackgroundStatus(id, "failed", err.Error())
+		payload, encodeErr := openaiProtocol.EncodeBackgroundResponseState(openaiProtocol.BackgroundResponseState{
+			ID:                 id,
+			Model:              job.state.Model,
+			Status:             "failed",
+			PreviousResponseID: job.state.PreviousResponseID,
+			ConversationID:     job.state.ConversationID,
+			Store:              true,
+			CreatedAt:          job.state.CreatedAt,
+			ErrorMessage:       err.Error(),
+		})
+		if encodeErr == nil {
+			record, loadErr := r.responseState.LoadResponse(context.Background(), id)
+			if loadErr == nil {
+				record.Payload = payload
+				record.Status = "failed"
+				record.Continuable = false
+				_ = r.responseState.SaveResponse(context.Background(), id, record)
+			}
+		}
 	}
 }
 
-func (r *Runtime) cancelBackgroundResponse(ctx context.Context, id string) (bool, error) {
+func (r *Runtime) claimBackgroundJob(id string) (backgroundJob, bool) {
 	r.backgroundMu.Lock()
+	defer r.backgroundMu.Unlock()
 	job, ok := r.background[id]
 	if ok {
 		delete(r.background, id)
 	}
-	r.backgroundMu.Unlock()
+	return job, ok
+}
+
+func (r *Runtime) cancelBackgroundResponse(ctx context.Context, id string) (bool, error) {
+	job, ok := r.claimBackgroundJob(id)
 	if !ok {
 		return false, nil
 	}
