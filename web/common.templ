@@ -1,0 +1,34 @@
+package web
+
+func providerTagClass(protocol string) string {
+	switch protocol {
+	case "openai":
+		return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+	case "anthropic":
+		return "bg-orange-500/10 text-orange-400 border-orange-500/20"
+	case "gemini":
+		return "bg-sky-500/10 text-sky-400 border-sky-500/20"
+	default:
+		return "bg-gray-500/10 text-gray-300 border-gray-500/20"
+	}
+}
+
+func targetPlural(n int) string {
+	if n != 1 {
+		return "s"
+	}
+	return ""
+}
+
+templ AdminShell(title string, data DashboardData) {
+	@Layout(title) {
+		<div class="flex min-h-screen w-full">
+			@Sidebar(data)
+			<main class="flex-1 min-w-0 p-6 md:p-8 lg:p-10 max-w-7xl">
+				<!-- Alert Banner for HTMX feedback -->
+				<div id="alert-banner" role="alert" aria-live="polite"></div>
+				{ children... }
+			</main>
+		</div>
+	}
+}

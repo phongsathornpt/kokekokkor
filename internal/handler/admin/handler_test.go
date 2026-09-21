@@ -183,7 +183,7 @@ func TestAdminUpdatesAndDeletesEncryptedAPIKey(t *testing.T) {
 		t.Fatalf("set status=%d values=%#v", rec.Code, credentials.values)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req = httptest.NewRequest(http.MethodGet, "/admin/providers", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	body := rec.Body.String()
@@ -242,7 +242,7 @@ func TestAdminProviderCRUDAndCredentialForget(t *testing.T) {
 		t.Fatalf("update status=%d provider=%#v", rec.Code, got)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req = httptest.NewRequest(http.MethodGet, "/admin/providers", nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	for _, want := range []string{"Add provider", "Save provider", "Delete provider"} {
@@ -310,26 +310,80 @@ func TestAdminRendersAccessibleFormControlsAndAlertBanner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEditable() error = %v", err)
 	}
+
+	// 1. Overview page
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
+		t.Fatalf("GET /admin status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`id="alert-banner"`,
+		`Upstream Providers`,
+		`Active Model Routes`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("overview body missing %q", want)
+		}
 	}
 
+	// 2. Providers page
+	req = httptest.NewRequest(http.MethodGet, "/admin/providers", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/providers status = %d", rec.Code)
+	}
+	body = rec.Body.String()
 	for _, want := range []string{
 		`id="alert-banner"`,
 		`<label for="new-protocol">Protocol</label>`,
 		`<select id="new-protocol" name="protocol" required>`,
 		`<label for="new-base-url">Base URL</label>`,
-		`<label for="default-select-gemini">Default provider</label>`,
-		`<select id="default-select-gemini"`,
-		`<option value="gemini" selected>gemini</option>`,
 		`hx-post="/admin/providers/toggle"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("body missing %q: %s", want, body)
+			t.Fatalf("providers body missing %q", want)
+		}
+	}
+
+	// 3. Defaults page
+	req = httptest.NewRequest(http.MethodGet, "/admin/defaults", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/defaults status = %d", rec.Code)
+	}
+	body = rec.Body.String()
+	for _, want := range []string{
+		`id="alert-banner"`,
+		`<label for="default-select-gemini">Default provider</label>`,
+		`<select id="default-select-gemini"`,
+		`<option value="gemini" selected>gemini</option>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("defaults body missing %q", want)
+		}
+	}
+
+	// 4. Routes page
+	req = httptest.NewRequest(http.MethodGet, "/admin/routes", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/routes status = %d", rec.Code)
+	}
+	body = rec.Body.String()
+	for _, want := range []string{
+		`id="alert-banner"`,
+		`<label for="new-route-model"`,
+		`<label for="new-route-targets"`,
+		`hx-post="/admin/routes"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("routes body missing %q", want)
 		}
 	}
 }
@@ -353,5 +407,43 @@ func TestAdminMutationErrorSetsRetargetHeaders(t *testing.T) {
 	}
 	if rec.Header().Get("HX-Reswap") != "innerHTML" {
 		t.Fatalf("HX-Reswap = %q, want innerHTML", rec.Header().Get("HX-Reswap"))
+	}
+}
+
+func TestAdminDedicatedPageRoutes(t *testing.T) {
+	catalog := &fakeCatalog{snapshot: testSnapshot()}
+	handler, err := NewEditable(catalog.snapshot, catalog, &fakeTokens{values: map[string]domainoauth.TokenSet{}}, []string{"gemini"}, nil)
+	if err != nil {
+		t.Fatalf("NewEditable() error = %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		path      string
+		wantTitle string
+	}{
+		{name: "root admin", path: "/admin", wantTitle: "kokekokkor admin - overview"},
+		{name: "admin overview", path: "/admin/overview", wantTitle: "kokekokkor admin - overview"},
+		{name: "admin providers", path: "/admin/providers", wantTitle: "kokekokkor admin - providers"},
+		{name: "admin defaults", path: "/admin/defaults", wantTitle: "kokekokkor admin - protocol defaults"},
+		{name: "admin routes", path: "/admin/routes", wantTitle: "kokekokkor admin - model routes"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want %d", tc.path, rec.Code, http.StatusOK)
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, tc.wantTitle) {
+				t.Errorf("GET %s missing title %q", tc.path, tc.wantTitle)
+			}
+			if !strings.Contains(body, `hx-boost="true"`) {
+				t.Errorf("GET %s missing hx-boost", tc.path)
+			}
+		})
 	}
 }

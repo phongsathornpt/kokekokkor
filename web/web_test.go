@@ -9,8 +9,8 @@ import (
 	"github.com/phongsathornpt/kokekokkor/web"
 )
 
-func TestRenderDashboard(t *testing.T) {
-	data := web.DashboardData{
+func sampleData() web.DashboardData {
+	return web.DashboardData{
 		Providers: []web.ProviderView{
 			{
 				ID:             "openai-main",
@@ -64,23 +64,53 @@ func TestRenderDashboard(t *testing.T) {
 		CredentialEditable: true,
 		Protocols:          []string{"openai", "anthropic", "gemini"},
 	}
+}
 
+func TestRenderOverview(t *testing.T) {
+	data := sampleData()
 	var buf bytes.Buffer
-	err := web.RenderDashboard(context.Background(), &buf, data)
-	if err != nil {
-		t.Fatalf("RenderDashboard() returned error: %v", err)
+	if err := web.RenderOverview(context.Background(), &buf, data); err != nil {
+		t.Fatalf("RenderOverview() error = %v", err)
 	}
-
 	output := buf.String()
-
-	// Verify crucial HTML structure and test-critical strings
-	expectedSubstrings := []string{
+	expected := []string{
 		"Gateway administration",
 		"csrf-test-token-12345",
 		"openai-main",
 		"anthropic-backup",
 		"gemini-oauth",
 		"fast-chat",
+		`id="alert-banner"`,
+		"Upstream Providers",
+		"Active Model Routes",
+		"Protocol Defaults",
+		"href=\"/admin/providers\"",
+		"href=\"/admin/defaults\"",
+		"href=\"/admin/routes\"",
+		"<style>",
+		"</style>",
+		"#090a0f",
+	}
+	for _, substr := range expected {
+		if !strings.Contains(output, substr) {
+			t.Errorf("rendered overview missing expected substring: %q", substr)
+		}
+	}
+}
+
+func TestRenderProviders(t *testing.T) {
+	data := sampleData()
+	var buf bytes.Buffer
+	if err := web.RenderProviders(context.Background(), &buf, data); err != nil {
+		t.Fatalf("RenderProviders() error = %v", err)
+	}
+	output := buf.String()
+	expected := []string{
+		"Gateway administration",
+		"csrf-test-token-12345",
+		"openai-main",
+		"anthropic-backup",
+		"gemini-oauth",
 		"Save key",
 		"Add provider",
 		"Save provider",
@@ -89,24 +119,82 @@ func TestRenderDashboard(t *testing.T) {
 		`<label for="new-protocol">Protocol</label>`,
 		`<select id="new-protocol" name="protocol" required>`,
 		`<label for="new-base-url">Base URL</label>`,
-		`<label for="default-select-gemini">Default provider</label>`,
 		`hx-post="/admin/providers/toggle"`,
-		`hx-post="/admin/defaults"`,
-		`hx-post="/admin/routes"`,
 		`hx-delete="/admin/oauth/gemini-oauth"`,
-		"<style>",
-		"</style>",
 	}
-
-	for _, substr := range expectedSubstrings {
+	for _, substr := range expected {
 		if !strings.Contains(output, substr) {
-			t.Errorf("rendered dashboard missing expected substring: %q", substr)
+			t.Errorf("rendered providers missing expected substring: %q", substr)
 		}
 	}
+}
 
-	// Verify embedded CSS has been injected inside <style>
-	if !strings.Contains(output, "#090a0f") {
-		t.Error("rendered dashboard does not contain expected dark theme CSS tokens")
+func TestRenderDefaults(t *testing.T) {
+	data := sampleData()
+	var buf bytes.Buffer
+	if err := web.RenderDefaults(context.Background(), &buf, data); err != nil {
+		t.Fatalf("RenderDefaults() error = %v", err)
+	}
+	output := buf.String()
+	expected := []string{
+		"Gateway administration",
+		"csrf-test-token-12345",
+		"Protocol Defaults",
+		`<label for="default-select-openai">Default provider</label>`,
+		`<label for="default-select-gemini">Default provider</label>`,
+		`hx-post="/admin/defaults"`,
+	}
+	for _, substr := range expected {
+		if !strings.Contains(output, substr) {
+			t.Errorf("rendered defaults missing expected substring: %q", substr)
+		}
+	}
+}
+
+func TestRenderRoutes(t *testing.T) {
+	data := sampleData()
+	var buf bytes.Buffer
+	if err := web.RenderRoutes(context.Background(), &buf, data); err != nil {
+		t.Fatalf("RenderRoutes() error = %v", err)
+	}
+	output := buf.String()
+	expected := []string{
+		"Gateway administration",
+		"csrf-test-token-12345",
+		"Model Routes",
+		"fast-chat",
+		"Fallback Chain",
+		"Add route",
+		`hx-post="/admin/routes"`,
+		`hx-post="/admin/routes/delete"`,
+	}
+	for _, substr := range expected {
+		if !strings.Contains(output, substr) {
+			t.Errorf("rendered routes missing expected substring: %q", substr)
+		}
+	}
+}
+
+func TestRenderDashboard(t *testing.T) {
+	pages := []struct {
+		page     web.PageName
+		expected string
+	}{
+		{web.PageOverview, "Upstream Providers"},
+		{web.PageProviders, "Save provider"},
+		{web.PageDefaults, "Protocol Defaults"},
+		{web.PageRoutes, "Model Routes"},
+	}
+	for _, p := range pages {
+		data := sampleData()
+		data.ActivePage = p.page
+		var buf bytes.Buffer
+		if err := web.RenderDashboard(context.Background(), &buf, data); err != nil {
+			t.Fatalf("RenderDashboard(%s) error = %v", p.page, err)
+		}
+		if !strings.Contains(buf.String(), p.expected) {
+			t.Errorf("RenderDashboard(%s) missing %q", p.page, p.expected)
+		}
 	}
 }
 

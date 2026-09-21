@@ -1,7 +1,18 @@
 package web
 
+// PageName identifies the current admin page view.
+type PageName string
+
+const (
+	PageOverview  PageName = "overview"
+	PageProviders PageName = "providers"
+	PageDefaults  PageName = "defaults"
+	PageRoutes    PageName = "routes"
+)
+
 // DashboardData holds the state required to render the gateway administration dashboard.
 type DashboardData struct {
+	ActivePage         PageName
 	Providers          []ProviderView
 	Defaults           []DefaultView
 	Routes             []RouteView

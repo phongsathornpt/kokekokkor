@@ -20,10 +20,10 @@ dev: web
 run:
 	go run ./cmd/kokekokkor
 
-test:
+test: web
 	go test ./...
 
-race:
+race: web
 	go test -race ./...
 
 fuzz:
@@ -37,7 +37,7 @@ modcheck:
 	go mod tidy -diff
 	go mod verify
 
-vet:
+vet: web
 	go vet ./...
 
 build: web
