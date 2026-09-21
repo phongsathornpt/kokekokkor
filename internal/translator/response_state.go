@@ -26,13 +26,14 @@ func newMemoryResponseStateStore() *memoryResponseStateStore {
 }
 
 func (s *memoryResponseStateStore) LoadResponse(_ context.Context, id string) (responsestate.Record, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	record, ok := s.responses[id]
 	if !ok {
 		return responsestate.Record{}, responsestate.ErrNotFound
 	}
 	if !record.ExpiresAt.IsZero() && time.Now().After(record.ExpiresAt) {
+		delete(s.responses, id)
 		return responsestate.Record{}, responsestate.ErrNotFound
 	}
 	record.Messages = cloneStateMessages(record.Messages)
