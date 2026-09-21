@@ -2,6 +2,7 @@ package translator
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -102,5 +103,25 @@ func TestResponsesStateBackgroundUsesShortRetention(t *testing.T) {
 	maxExpiry := time.Now().Add(responsestate.BackgroundRetention + time.Second)
 	if record.ExpiresAt.Before(minExpiry) || record.ExpiresAt.After(maxExpiry) {
 		t.Fatalf("ExpiresAt = %v, want background retention around %v", record.ExpiresAt, responsestate.BackgroundRetention)
+	}
+}
+
+func TestMemoryResponseStatePrunesExpiredRecords(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryResponseStateStore()
+	if err := store.SaveResponse(ctx, "expired", responsestate.Record{
+		Continuable: true,
+		ExpiresAt:   time.Now().Add(-time.Second),
+	}); err != nil {
+		t.Fatalf("SaveResponse() error = %v", err)
+	}
+	if _, err := store.LoadResponse(ctx, "expired"); !errors.Is(err, responsestate.ErrNotFound) {
+		t.Fatalf("LoadResponse() error = %v, want ErrNotFound", err)
+	}
+	store.mu.RLock()
+	_, exists := store.responses["expired"]
+	store.mu.RUnlock()
+	if exists {
+		t.Fatal("expired response was not pruned")
 	}
 }
