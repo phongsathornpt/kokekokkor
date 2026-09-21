@@ -104,3 +104,60 @@ func TestGeminiGenerateContentToOpenAITranslatesRequestAndResponse(t *testing.T)
 		t.Fatalf("translated response = %#v", output)
 	}
 }
+
+func TestOpenAIChatToAntigravityTranslatesRequestAndResponse(t *testing.T) {
+	client := &fakeClient{response: upstream.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       []byte(`{"responseId":"resp_antigravity","modelVersion":"claude-opus-4-6-thinking","candidates":[{"content":{"role":"model","parts":[{"text":"Hello from Antigravity"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":8}}`),
+	}}
+	runtime := New(client)
+	response, err := runtime.OpenAIChatToGemini(context.Background(), provider.Target{
+		ID: "antigravity", Protocol: provider.ProtocolGemini, BaseURL: "https://cloudcode-pa.googleapis.com",
+	}, "claude-opus-4-6-thinking", http.Header{}, []byte(`{"model":"claude-opus-4-6-thinking","messages":[{"role":"user","content":"explain quantum gravity"}]}`))
+	if err != nil {
+		t.Fatalf("OpenAIChatToGemini() error = %v", err)
+	}
+
+	// Verify Antigravity path
+	if client.request.Path != "/v1internal:generateContent" {
+		t.Fatalf("upstream path = %q, want /v1internal:generateContent", client.request.Path)
+	}
+
+	// Verify Antigravity headers
+	if client.request.Header.Get("User-Agent") != "antigravity/1.107.0 darwin/arm64" {
+		t.Errorf("User-Agent = %q", client.request.Header.Get("User-Agent"))
+	}
+	if client.request.Header.Get("X-Client-Name") != "antigravity" {
+		t.Errorf("X-Client-Name = %q", client.request.Header.Get("X-Client-Name"))
+	}
+
+	// Verify Antigravity request payload has model and ideRequestId
+	var sent map[string]any
+	if err := json.Unmarshal(client.request.Body, &sent); err != nil {
+		t.Fatalf("decode Antigravity request body: %v", err)
+	}
+	if sent["model"] != "claude-opus-4-6-thinking" {
+		t.Errorf("model = %v, want claude-opus-4-6-thinking", sent["model"])
+	}
+	if _, ok := sent["ideRequestId"].(string); !ok {
+		t.Errorf("ideRequestId missing or not string: %v", sent["ideRequestId"])
+	}
+
+	// Verify OpenAI response format
+	var output struct {
+		Model   string `json:"model"`
+		Choices []struct {
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(response.Body, &output); err != nil {
+		t.Fatalf("decode OpenAI response: %v", err)
+	}
+	if output.Model != "claude-opus-4-6-thinking" || len(output.Choices) != 1 || output.Choices[0].Message.Content != "Hello from Antigravity" {
+		t.Fatalf("output = %#v", output)
+	}
+}

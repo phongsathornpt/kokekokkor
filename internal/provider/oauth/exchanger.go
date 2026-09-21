@@ -35,24 +35,32 @@ func NewExchanger(client *http.Client) *Exchanger {
 }
 
 func (e *Exchanger) Exchange(ctx context.Context, provider domainoauth.Provider, request appoauth.ExchangeRequest) (domainoauth.TokenSet, error) {
-	return e.exchangeForm(ctx, provider.TokenURL, url.Values{
+	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"client_id":     {provider.ClientID},
 		"code":          {request.Code},
 		"code_verifier": {request.CodeVerifier},
 		"redirect_uri":  {request.RedirectURI},
-	})
+	}
+	if provider.ClientSecret != "" {
+		form.Set("client_secret", provider.ClientSecret)
+	}
+	return e.exchangeForm(ctx, provider.TokenURL, form)
 }
 
 func (e *Exchanger) Refresh(ctx context.Context, provider domainoauth.Provider, current domainoauth.TokenSet) (domainoauth.TokenSet, error) {
 	if strings.TrimSpace(current.RefreshToken) == "" {
 		return domainoauth.TokenSet{}, fmt.Errorf("OAuth refresh token must not be empty")
 	}
-	return e.exchangeForm(ctx, provider.TokenURL, url.Values{
+	form := url.Values{
 		"grant_type":    {"refresh_token"},
 		"client_id":     {provider.ClientID},
 		"refresh_token": {current.RefreshToken},
-	})
+	}
+	if provider.ClientSecret != "" {
+		form.Set("client_secret", provider.ClientSecret)
+	}
+	return e.exchangeForm(ctx, provider.TokenURL, form)
 }
 
 func (e *Exchanger) DeviceAuthorize(ctx context.Context, provider domainoauth.Provider) (domainoauth.DeviceAuthorization, error) {

@@ -111,7 +111,10 @@ func joinURL(base *url.URL, requestPath, rawQuery string) *url.URL {
 }
 
 func copySafeHeaders(dst, src http.Header) {
-	for _, key := range []string{"Accept", "Content-Type", "User-Agent", "X-Request-ID"} {
+	for _, key := range []string{
+		"Accept", "Content-Type", "User-Agent", "X-Request-ID",
+		"X-Client-Name", "X-Client-Version", "Client-Metadata",
+	} {
 		for _, value := range src.Values(key) {
 			dst.Add(key, value)
 		}
@@ -135,7 +138,9 @@ func applyCredentials(header http.Header, target provider.Target, bearerToken, d
 			header.Set("Anthropic-Version", defaultAnthropicVersion)
 		}
 	case provider.ProtocolGemini:
-		if target.APIKey != "" {
+		if target.IsAntigravity() && target.APIKey != "" {
+			header.Set("Authorization", "Bearer "+target.APIKey)
+		} else if target.APIKey != "" {
 			header.Set("X-Goog-Api-Key", target.APIKey)
 		}
 	case provider.ProtocolOpenAI:

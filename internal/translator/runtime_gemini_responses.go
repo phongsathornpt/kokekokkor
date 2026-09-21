@@ -39,12 +39,21 @@ func (r *Runtime) OpenAIResponsesToGemini(ctx context.Context, target provider.T
 	if err != nil {
 		return upstream.Response{}, apptranslation.WrapRequest(err)
 	}
+	reqHeader := header
+	if target.IsAntigravity() {
+		path = geminiProtocol.AntigravityGenerateContentPath()
+		reqHeader = geminiProtocol.AntigravityHeaders(header)
+		encoded, err = geminiProtocol.FormatAntigravityRequest(encoded, model, "")
+		if err != nil {
+			return upstream.Response{}, apptranslation.WrapRequest(err)
+		}
+	}
 
 	work := func(workCtx context.Context) (upstream.Response, llm.Response, error) {
 		response, err := r.client.Do(workCtx, target, upstream.Request{
 			Method: http.MethodPost,
 			Path:   path,
-			Header: header,
+			Header: reqHeader,
 			Body:   encoded,
 		})
 		if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {

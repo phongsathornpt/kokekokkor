@@ -35,11 +35,20 @@ func (r *Runtime) OpenAIChatToGeminiStream(ctx context.Context, target provider.
 	if err != nil {
 		return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
 	}
+	reqHeader := streamRequestHeaders(header)
+	if target.IsAntigravity() {
+		path = geminiProtocol.AntigravityStreamGenerateContentPath()
+		reqHeader = geminiProtocol.AntigravityHeaders(reqHeader)
+		encoded, err = geminiProtocol.FormatAntigravityRequest(encoded, model, "")
+		if err != nil {
+			return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
+		}
+	}
 	response, err := r.client.Stream(ctx, target, upstream.Request{
 		Method:   http.MethodPost,
 		Path:     path,
 		RawQuery: "alt=sse",
-		Header:   streamRequestHeaders(header),
+		Header:   reqHeader,
 		Body:     encoded,
 	})
 	if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -88,11 +97,20 @@ func (r *Runtime) OpenAIResponsesToGeminiStream(ctx context.Context, target prov
 	if err != nil {
 		return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
 	}
+	respReqHeader := streamRequestHeaders(header)
+	if target.IsAntigravity() {
+		path = geminiProtocol.AntigravityStreamGenerateContentPath()
+		respReqHeader = geminiProtocol.AntigravityHeaders(respReqHeader)
+		encoded, err = geminiProtocol.FormatAntigravityRequest(encoded, model, "")
+		if err != nil {
+			return upstream.StreamResponse{}, apptranslation.WrapRequest(err)
+		}
+	}
 	response, err := r.client.Stream(ctx, target, upstream.Request{
 		Method:   http.MethodPost,
 		Path:     path,
 		RawQuery: "alt=sse",
-		Header:   streamRequestHeaders(header),
+		Header:   respReqHeader,
 		Body:     encoded,
 	})
 	if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {

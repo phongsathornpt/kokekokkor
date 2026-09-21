@@ -61,7 +61,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE", "no Gemini route configured")
 		return
 	}
-	if len(plan.Attempts) == 1 && plan.Attempts[0].Target.EffectiveProtocol() == provider.ProtocolGemini && plan.Attempts[0].Model == model {
+	if len(plan.Attempts) == 1 && plan.Attempts[0].Target.EffectiveProtocol() == provider.ProtocolGemini && plan.Attempts[0].Model == model && !plan.Attempts[0].Target.IsAntigravity() {
 		if err := h.forwarder.ServeHTTPTo(w, r, plan.Attempts[0].Target, false); err != nil {
 			writeError(w, http.StatusBadGateway, "UNAVAILABLE", err.Error())
 		}
@@ -82,7 +82,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch attempt.Target.EffectiveProtocol() {
 		case provider.ProtocolGemini:
 			attemptRequest := cloneWithBody(r, body)
-			if attempt.Model != model {
+			if attempt.Target.IsAntigravity() {
+				isStream := strings.HasSuffix(r.URL.Path, ":streamGenerateContent")
+				path := AntigravityGenerateContentPath()
+				query := ""
+				if isStream {
+					path = AntigravityStreamGenerateContentPath()
+					query = "alt=sse"
+				}
+				formatted, fErr := FormatAntigravityRequest(body, attempt.Model, "")
+				if fErr != nil {
+					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", fErr.Error())
+					return
+				}
+				attemptRequest = cloneWithBody(r, formatted)
+				attemptRequest.URL.Path, attemptRequest.URL.RawPath = path, ""
+				attemptRequest.URL.RawQuery = query
+			} else if attempt.Model != model {
 				path, rewriteErr := rewriteModelPath(r.URL.Path, attempt.Model)
 				if rewriteErr != nil {
 					writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", rewriteErr.Error())

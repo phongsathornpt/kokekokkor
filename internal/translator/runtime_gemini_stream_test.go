@@ -117,3 +117,43 @@ func TestGeminiStreamGenerateContentToOpenAITranslatesNativeSSE(t *testing.T) {
 		t.Fatalf("Content-Type = %q", got)
 	}
 }
+
+func TestOpenAIChatToAntigravityStreamTranslatesSSE(t *testing.T) {
+	client := &fakeClient{streamResponse: upstream.StreamResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Streaming from Antigravity\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":4,\"candidatesTokenCount\":2},\"modelVersion\":\"claude-opus-4-6-thinking\",\"responseId\":\"agy_resp_1\"}\n\n",
+		)),
+	}}
+	runtime := New(client)
+	response, err := runtime.OpenAIChatToGeminiStream(context.Background(), provider.Target{
+		ID: "antigravity", Protocol: provider.ProtocolGemini, BaseURL: "https://cloudcode-pa.googleapis.com",
+	}, "claude-opus-4-6-thinking", http.Header{}, []byte(`{"model":"claude-opus-4-6-thinking","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	if err != nil {
+		t.Fatalf("OpenAIChatToGeminiStream() error = %v", err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read translated stream: %v", err)
+	}
+
+	// Verify Antigravity stream path and query
+	if client.request.Path != "/v1internal:streamGenerateContent" || client.request.RawQuery != "alt=sse" {
+		t.Fatalf("upstream path=%q query=%q", client.request.Path, client.request.RawQuery)
+	}
+
+	// Verify Antigravity headers
+	if client.request.Header.Get("User-Agent") != "antigravity/1.107.0 darwin/arm64" {
+		t.Errorf("User-Agent = %q", client.request.Header.Get("User-Agent"))
+	}
+	if client.request.Header.Get("X-Client-Name") != "antigravity" {
+		t.Errorf("X-Client-Name = %q", client.request.Header.Get("X-Client-Name"))
+	}
+
+	text := string(data)
+	if !strings.Contains(text, "chat.completion.chunk") || !strings.Contains(text, "Streaming from Antigravity") || !strings.Contains(text, "[DONE]") {
+		t.Fatalf("translated stream = %q", text)
+	}
+}

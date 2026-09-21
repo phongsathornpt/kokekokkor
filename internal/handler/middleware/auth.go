@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
@@ -13,8 +14,8 @@ func BearerAuth(expected string, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
-		if !ok || !strings.EqualFold(scheme, "Bearer") || !APIKeyEqual(token, expected) {
+		token, ok := extractBearerToken(r.Header.Get("Authorization"))
+		if !ok || !APIKeyEqual(token, expected) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -36,12 +37,9 @@ func AnthropicAPIKeyAuth(expected string, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("X-Api-Key")
+		token := strings.TrimSpace(r.Header.Get("X-Api-Key"))
 		if token == "" {
-			scheme, bearer, ok := strings.Cut(r.Header.Get("Authorization"), " ")
-			if ok && strings.EqualFold(scheme, "Bearer") {
-				token = bearer
-			}
+			token, _ = extractBearerToken(r.Header.Get("Authorization"))
 		}
 		if !APIKeyEqual(token, expected) {
 			w.Header().Set("Content-Type", "application/json")
@@ -65,15 +63,12 @@ func GeminiAPIKeyAuth(expected string, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("X-Goog-Api-Key")
+		token := strings.TrimSpace(r.Header.Get("X-Goog-Api-Key"))
 		if token == "" {
-			token = r.URL.Query().Get("key")
+			token = strings.TrimSpace(r.URL.Query().Get("key"))
 		}
 		if token == "" {
-			scheme, bearer, ok := strings.Cut(r.Header.Get("Authorization"), " ")
-			if ok && strings.EqualFold(scheme, "Bearer") {
-				token = bearer
-			}
+			token, _ = extractBearerToken(r.Header.Get("Authorization"))
 		}
 		if !APIKeyEqual(token, expected) {
 			w.Header().Set("Content-Type", "application/json")
@@ -91,10 +86,30 @@ func GeminiAPIKeyAuth(expected string, next http.Handler) http.Handler {
 	})
 }
 
-// APIKeyEqual compares two API keys in constant time.
+// extractBearerToken safely extracts a Bearer token from an Authorization header,
+// handling variable whitespace between the scheme and token.
+func extractBearerToken(authHeader string) (string, bool) {
+	trimmed := strings.TrimSpace(authHeader)
+	if trimmed == "" {
+		return "", false
+	}
+	scheme, token, ok := strings.Cut(trimmed, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+// APIKeyEqual compares two API keys in constant time without leaking key length.
 func APIKeyEqual(got, expected string) bool {
-	if got == "" || len(got) != len(expected) {
+	if got == "" || expected == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
+	gotHash := sha256.Sum256([]byte(got))
+	expectedHash := sha256.Sum256([]byte(expected))
+	return subtle.ConstantTimeCompare(gotHash[:], expectedHash[:]) == 1
 }

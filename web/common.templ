@@ -493,7 +493,7 @@ templ RouteLedger(data DashboardData, full bool) {
 
 templ AdminShell(title string, data DashboardData) {
 	@Layout(title) {
-		<div class="flex min-h-screen w-full">
+		<div class="flex min-h-screen w-full" hx-headers={ fmt.Sprintf(`{"X-CSRF-Token": "%s"}`, data.CSRF) }>
 			@Sidebar(data)
 			<div class="flex flex-1 flex-col min-w-0">
 				<main class="mx-auto w-full max-w-[1480px] flex-1 px-6 py-8 lg:px-10">

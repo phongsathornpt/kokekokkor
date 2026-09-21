@@ -134,6 +134,19 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 			return oauthRuntime{}, err
 		}
 	}
+	if oauthConfig.AntigravityClientID != "" {
+		providerID := defaultAntigravityProviderID(cfg, snapshot)
+		profile, err := provideroauth.AntigravityProfile(provideroauth.ProfileOptions{
+			ProviderID: providerID,
+			ClientID:   oauthConfig.AntigravityClientID,
+		})
+		if err != nil {
+			return oauthRuntime{}, err
+		}
+		if err := addProfile(profile); err != nil {
+			return oauthRuntime{}, err
+		}
+	}
 	for _, configuredProfile := range oauthConfig.Profiles {
 		options := provideroauth.ProfileOptions{
 			ProviderID:             configuredProfile.ProviderID,
@@ -154,6 +167,8 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 			profile, err = provideroauth.ClaudeProfile(options)
 		case "github", "copilot":
 			profile, err = provideroauth.GitHubCopilotProfile(options)
+		case "antigravity", "agy":
+			profile, err = provideroauth.AntigravityProfile(options)
 		default:
 			profile, err = provideroauth.GenericProfile(options)
 		}
@@ -202,6 +217,15 @@ func defaultGitHubProviderID(cfg config.Config, snapshot domaincatalog.Snapshot)
 		}
 	}
 	return "github"
+}
+
+func defaultAntigravityProviderID(cfg config.Config, snapshot domaincatalog.Snapshot) string {
+	for _, p := range snapshot.Providers {
+		if strings.Contains(strings.ToLower(p.ID), "antigravity") || strings.Contains(strings.ToLower(p.ID), "agy") {
+			return p.ID
+		}
+	}
+	return "antigravity"
 }
 
 func defaultOpenAIProviderID(cfg config.Config, snapshot domaincatalog.Snapshot) string {

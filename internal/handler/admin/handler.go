@@ -287,6 +287,7 @@ func (h *Handler) pollDeviceCode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	h.ensurePresetProvider(r.Context(), providerID)
 	mutationOK(w)
 }
 
@@ -303,7 +304,7 @@ func (h *Handler) manualExchange(w http.ResponseWriter, r *http.Request) {
 		mutationError(w, http.StatusBadRequest, "code or callback URL is required")
 		return
 	}
-	if strings.HasPrefix(raw, "eyJ") || strings.HasPrefix(raw, "sk-") {
+	if strings.HasPrefix(raw, "eyJ") || strings.HasPrefix(raw, "sk-") || strings.HasPrefix(raw, "ya29.") || strings.HasPrefix(raw, "ghu_") || strings.HasPrefix(raw, "gho_") {
 		if h.tokens == nil {
 			mutationError(w, http.StatusBadRequest, "token storage not configured")
 			return
@@ -312,6 +313,7 @@ func (h *Handler) manualExchange(w http.ResponseWriter, r *http.Request) {
 			mutationError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		h.ensurePresetProvider(r.Context(), providerID)
 		mutationOK(w)
 		return
 	}
@@ -337,6 +339,7 @@ func (h *Handler) manualExchange(w http.ResponseWriter, r *http.Request) {
 		mutationError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.ensurePresetProvider(r.Context(), providerID)
 	mutationOK(w)
 }
 
@@ -371,7 +374,34 @@ func (h *Handler) importToken(w http.ResponseWriter, r *http.Request) {
 		mutationError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.ensurePresetProvider(r.Context(), providerID)
 	mutationOK(w)
+}
+
+func (h *Handler) ensurePresetProvider(ctx context.Context, providerID string) {
+	if h.catalog == nil {
+		return
+	}
+	snapshot, err := h.catalog.Load(ctx)
+	if err != nil {
+		return
+	}
+	for _, p := range snapshot.Providers {
+		if p.ID == providerID {
+			return
+		}
+	}
+	for _, preset := range web.DefaultProviderPresets() {
+		if preset.ID == providerID {
+			_ = h.catalog.CreateProvider(ctx, domaincatalog.Provider{
+				ID:       preset.ID,
+				Protocol: provider.Protocol(preset.Protocol),
+				BaseURL:  preset.BaseURL,
+				Enabled:  true,
+			})
+			return
+		}
+	}
 }
 
 func (h *Handler) createProvider(w http.ResponseWriter, r *http.Request) {
@@ -430,6 +460,9 @@ func (h *Handler) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.credentials != nil {
 		h.credentials.ForgetProvider(providerID)
+	}
+	if h.tokens != nil {
+		_ = h.tokens.Delete(r.Context(), providerID)
 	}
 	mutationOK(w)
 }

@@ -1,12 +1,16 @@
 package adminhttp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +56,10 @@ func (a *SessionAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/admin/login" {
 		switch r.Method {
 		case http.MethodGet:
+			if _, _, ok := a.session(r); ok {
+				http.Redirect(w, r, "/admin", http.StatusSeeOther)
+				return
+			}
 			a.renderLogin(w, http.StatusOK, "")
 		case http.MethodPost:
 			a.login(w, r)
@@ -63,6 +71,14 @@ func (a *SessionAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	token, session, ok := a.session(r)
 	if !ok {
+		if cookie, err := r.Cookie(adminSessionCookie); err == nil && cookie.Value != "" {
+			a.clearCookie(w, r)
+		}
+		if r.Header.Get("HX-Request") == "true" {
+			w.Header().Set("HX-Redirect", "/admin/login")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 		} else {
@@ -95,6 +111,9 @@ func (a *SessionAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != http.MethodGet && r.Method != http.MethodHead && !csrfEqual(r, session.CSRF) {
+		if r.Header.Get("HX-Request") == "true" {
+			w.Header().Set("HX-Redirect", "/admin/login")
+		}
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
@@ -146,7 +165,7 @@ func (a *SessionAuth) login(w http.ResponseWriter, r *http.Request) {
 		Path:     "/admin",
 		HttpOnly: true,
 		Secure:   requestIsHTTPS(r),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		Expires:  expires,
 		MaxAge:   int(a.ttl.Seconds()),
 	})
@@ -198,8 +217,9 @@ func (a *SessionAuth) clearCookie(w http.ResponseWriter, r *http.Request) {
 		Path:     "/admin",
 		HttpOnly: true,
 		Secure:   requestIsHTTPS(r),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
 	})
 }
 
@@ -236,14 +256,29 @@ func csrfEqual(r *http.Request, expected string) bool {
 	if got == "" {
 		got = r.FormValue("csrf_token")
 	}
+	if got == "" && r.URL.Query().Has("csrf_token") {
+		got = r.URL.Query().Get("csrf_token")
+	}
+	if got == "" && r.Body != nil {
+		bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxAdminFormBodyBytes))
+		if err == nil {
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			vals, err := url.ParseQuery(string(bodyBytes))
+			if err == nil {
+				got = vals.Get("csrf_token")
+			}
+		}
+	}
 	return secretEqual(got, expected)
 }
 
 func secretEqual(got, expected string) bool {
-	if got == "" || expected == "" || len(got) != len(expected) {
+	if got == "" || expected == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
+	gotHash := sha256.Sum256([]byte(got))
+	expectedHash := sha256.Sum256([]byte(expected))
+	return subtle.ConstantTimeCompare(gotHash[:], expectedHash[:]) == 1
 }
 
 func randomToken(size int) (string, error) {
@@ -258,5 +293,26 @@ func requestIsHTTPS(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		proto = r.Header.Get("X-Forwarded-Scheme")
+	}
+	if proto != "" {
+		if first, _, ok := strings.Cut(proto, ","); ok {
+			proto = first
+		}
+		return strings.EqualFold(strings.TrimSpace(proto), "https")
+	}
+	if strings.EqualFold(r.Header.Get("X-Forwarded-Ssl"), "on") {
+		return true
+	}
+	if forwarded := r.Header.Get("Forwarded"); forwarded != "" {
+		for _, part := range strings.Split(forwarded, ";") {
+			k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
+			if ok && strings.EqualFold(k, "proto") && strings.EqualFold(strings.Trim(v, `"`), "https") {
+				return true
+			}
+		}
+	}
+	return false
 }

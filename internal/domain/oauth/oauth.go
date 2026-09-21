@@ -21,6 +21,7 @@ type Provider struct {
 	TokenURL               string
 	DeviceAuthorizationURL string
 	ClientID               string
+	ClientSecret           string
 	Scopes                 []string
 	AuthorizationParams    map[string]string
 }

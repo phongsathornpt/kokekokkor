@@ -33,7 +33,7 @@ func TestSessionAuthLoginAndCSRF(t *testing.T) {
 		t.Fatalf("login status=%d", login.Code)
 	}
 	cookies := login.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != adminSessionCookie || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+	if len(cookies) != 1 || cookies[0].Name != adminSessionCookie || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookies=%#v", cookies)
 	}
 

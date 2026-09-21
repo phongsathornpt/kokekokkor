@@ -70,3 +70,21 @@ func TestLoadOAuthProfilesClaudeAndGitHub(t *testing.T) {
 		t.Fatalf("profile[1]=%#v", cfg.Profiles[1])
 	}
 }
+
+func TestLoadOAuthProfilesAntigravity(t *testing.T) {
+	t.Setenv("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL", "https://gateway.example.com")
+	t.Setenv("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID", "")
+	t.Setenv("KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID", "")
+	t.Setenv("KOKEKOKKOR_OAUTH_PROFILES_JSON", `[{"kind":"antigravity"}]`)
+
+	cfg, enabled, err := LoadOAuth()
+	if err != nil {
+		t.Fatalf("LoadOAuth() error = %v", err)
+	}
+	if !enabled || len(cfg.Profiles) != 1 {
+		t.Fatalf("enabled=%v profiles=%#v", enabled, cfg.Profiles)
+	}
+	if cfg.Profiles[0].Kind != "antigravity" || cfg.Profiles[0].ProviderID != "antigravity" || cfg.Profiles[0].ClientID != DefaultAntigravityClientID {
+		t.Fatalf("profile[0]=%#v", cfg.Profiles[0])
+	}
+}

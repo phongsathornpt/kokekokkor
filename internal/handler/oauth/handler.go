@@ -22,6 +22,11 @@ type Handler struct {
 	providers     map[string]domainoauth.Provider
 	publicBaseURL string
 	logger        *slog.Logger
+	onSuccess     func(context.Context, string)
+}
+
+func (h *Handler) SetOnSuccess(fn func(context.Context, string)) {
+	h.onSuccess = fn
 }
 
 func New(service Service, providers map[string]domainoauth.Provider, publicBaseURL string) (*Handler, error) {
@@ -86,6 +91,13 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request, providerID st
 	if err != nil {
 		h.logFailure(r, providerID, "callback", err)
 		writeError(w, http.StatusBadRequest, "OAuth authorization could not be completed")
+		return
+	}
+	if h.onSuccess != nil {
+		h.onSuccess(r.Context(), providerID)
+	}
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, "/admin/providers", http.StatusFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

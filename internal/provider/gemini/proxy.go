@@ -74,7 +74,17 @@ func (p *Proxy) ServeHTTPTo(w http.ResponseWriter, r *http.Request, target provi
 	if bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	} else if target.APIKey != "" {
-		req.Header.Set("X-Goog-Api-Key", target.APIKey)
+		if target.IsAntigravity() {
+			req.Header.Set("Authorization", "Bearer "+target.APIKey)
+		} else {
+			req.Header.Set("X-Goog-Api-Key", target.APIKey)
+		}
+	}
+	if target.IsAntigravity() {
+		req.Header.Set("User-Agent", "antigravity/1.107.0 darwin/arm64")
+		req.Header.Set("X-Client-Name", "antigravity")
+		req.Header.Set("X-Client-Version", "1.107.0")
+		req.Header.Set("Client-Metadata", `{"ideType":9,"platform":2,"pluginType":2}`)
 	}
 	proxy.ServeHTTP(w, req)
 	return forwardErr

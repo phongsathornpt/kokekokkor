@@ -23,12 +23,16 @@ const (
 	GitHubDeviceAuthorizationURL = "https://github.com/login/device/code"
 	GitHubTokenURL               = "https://github.com/login/oauth/access_token"
 	GitHubCopilotClientID        = "Iv1.b507a08c87ecfe81"
+
+	AntigravityClientID     = "REMOVED_GOOGLE_OAUTH_CLIENT_ID"
+	AntigravityClientSecret = "REMOVED_GOOGLE_OAUTH_CLIENT_SECRET"
 )
 
 type ProfileOptions struct {
 	ProviderID             string
 	FlowType               domainoauth.FlowType
 	ClientID               string
+	ClientSecret           string
 	Scopes                 []string
 	AuthorizationURL       string
 	TokenURL               string
@@ -41,6 +45,7 @@ func GenericProfile(options ProfileOptions) (domainoauth.Provider, error) {
 		ID:                     strings.TrimSpace(options.ProviderID),
 		FlowType:               options.FlowType,
 		ClientID:               strings.TrimSpace(options.ClientID),
+		ClientSecret:           strings.TrimSpace(options.ClientSecret),
 		AuthorizationURL:       strings.TrimSpace(options.AuthorizationURL),
 		TokenURL:               strings.TrimSpace(options.TokenURL),
 		DeviceAuthorizationURL: strings.TrimSpace(options.DeviceAuthorizationURL),
@@ -195,6 +200,49 @@ func GitHubCopilotProfile(options ProfileOptions) (domainoauth.Provider, error) 
 	}
 	if value := strings.TrimSpace(options.DeviceAuthorizationURL); value != "" {
 		defaults.DeviceAuthorizationURL = value
+	}
+	if value := strings.TrimSpace(options.TokenURL); value != "" {
+		defaults.TokenURL = value
+	}
+	if len(options.Scopes) != 0 {
+		defaults.Scopes = append([]string(nil), options.Scopes...)
+	}
+	for key, value := range options.AuthorizationParams {
+		defaults.AuthorizationParams[key] = value
+	}
+	return GenericProfile(defaults)
+}
+
+func AntigravityProfile(options ProfileOptions) (domainoauth.Provider, error) {
+	clientID := strings.TrimSpace(options.ClientID)
+	if clientID == "" || clientID == "default" || clientID == "public" {
+		clientID = AntigravityClientID
+	}
+	clientSecret := strings.TrimSpace(options.ClientSecret)
+	if clientSecret == "" {
+		clientSecret = AntigravityClientSecret
+	}
+	defaults := ProfileOptions{
+		ProviderID:       "antigravity",
+		ClientID:         clientID,
+		ClientSecret:     clientSecret,
+		AuthorizationURL: GoogleAuthorizationURL,
+		TokenURL:         GoogleTokenURL,
+		Scopes: []string{
+			"https://www.googleapis.com/auth/cloud-platform",
+			"https://www.googleapis.com/auth/userinfo.email",
+			"https://www.googleapis.com/auth/userinfo.profile",
+		},
+		AuthorizationParams: map[string]string{
+			"access_type": "offline",
+			"prompt":      "consent",
+		},
+	}
+	if value := strings.TrimSpace(options.ProviderID); value != "" {
+		defaults.ProviderID = value
+	}
+	if value := strings.TrimSpace(options.AuthorizationURL); value != "" {
+		defaults.AuthorizationURL = value
 	}
 	if value := strings.TrimSpace(options.TokenURL); value != "" {
 		defaults.TokenURL = value

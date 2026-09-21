@@ -10,8 +10,9 @@ import (
 
 const (
 	DefaultCodexClientID  = "app_EMoamEEZ73f0CkXaXp7hrann"
-	DefaultClaudeClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	DefaultGitHubClientID = "Iv1.b507a08c87ecfe81"
+	DefaultClaudeClientID      = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	DefaultGitHubClientID      = "Iv1.b507a08c87ecfe81"
+	DefaultAntigravityClientID = "REMOVED_GOOGLE_OAUTH_CLIENT_ID"
 )
 
 type OAuthProfile struct {
@@ -26,21 +27,23 @@ type OAuthProfile struct {
 }
 
 type OAuth struct {
-	PublicBaseURL  string
-	GeminiClientID string
-	CodexClientID  string
-	ClaudeClientID string
-	GitHubClientID string
-	Profiles       []OAuthProfile
+	PublicBaseURL       string
+	GeminiClientID      string
+	CodexClientID       string
+	ClaudeClientID      string
+	GitHubClientID      string
+	AntigravityClientID string
+	Profiles            []OAuthProfile
 }
 
 func LoadOAuth() (OAuth, bool, error) {
 	cfg := OAuth{
-		PublicBaseURL:  strings.TrimRight(strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL")), "/"),
-		GeminiClientID: strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID")),
-		CodexClientID:  strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID")),
-		ClaudeClientID: strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CLAUDE_CLIENT_ID")),
-		GitHubClientID: strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GITHUB_CLIENT_ID")),
+		PublicBaseURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL")), "/"),
+		GeminiClientID:      strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID")),
+		CodexClientID:       strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID")),
+		ClaudeClientID:      strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_CLAUDE_CLIENT_ID")),
+		GitHubClientID:      strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_GITHUB_CLIENT_ID")),
+		AntigravityClientID: strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_ANTIGRAVITY_CLIENT_ID")),
 	}
 	if cfg.CodexClientID == "default" || cfg.CodexClientID == "true" {
 		cfg.CodexClientID = DefaultCodexClientID
@@ -50,6 +53,9 @@ func LoadOAuth() (OAuth, bool, error) {
 	}
 	if cfg.GitHubClientID == "default" || cfg.GitHubClientID == "true" {
 		cfg.GitHubClientID = DefaultGitHubClientID
+	}
+	if cfg.AntigravityClientID == "default" || cfg.AntigravityClientID == "true" {
+		cfg.AntigravityClientID = DefaultAntigravityClientID
 	}
 	if raw := strings.TrimSpace(os.Getenv("KOKEKOKKOR_OAUTH_PROFILES_JSON")); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &cfg.Profiles); err != nil {
@@ -66,7 +72,7 @@ func LoadOAuth() (OAuth, bool, error) {
 			profile.AuthorizationURL = strings.TrimSpace(profile.AuthorizationURL)
 			profile.TokenURL = strings.TrimSpace(profile.TokenURL)
 			profile.DeviceAuthorizationURL = strings.TrimSpace(profile.DeviceAuthorizationURL)
-			if profile.Kind != "generic" && profile.Kind != "gemini" && profile.Kind != "codex" && profile.Kind != "chatgpt" && profile.Kind != "claude" && profile.Kind != "github" && profile.Kind != "copilot" {
+			if profile.Kind != "generic" && profile.Kind != "gemini" && profile.Kind != "codex" && profile.Kind != "chatgpt" && profile.Kind != "claude" && profile.Kind != "github" && profile.Kind != "copilot" && profile.Kind != "antigravity" && profile.Kind != "agy" {
 				return OAuth{}, false, fmt.Errorf("OAuth profile %d has unsupported kind %q", i, profile.Kind)
 			}
 			if profile.Kind == "codex" || profile.Kind == "chatgpt" {
@@ -93,6 +99,14 @@ func LoadOAuth() (OAuth, bool, error) {
 					profile.ProviderID = "github"
 				}
 			}
+			if profile.Kind == "antigravity" || profile.Kind == "agy" {
+				if profile.ClientID == "" || profile.ClientID == "default" || profile.ClientID == "public" {
+					profile.ClientID = DefaultAntigravityClientID
+				}
+				if profile.ProviderID == "" {
+					profile.ProviderID = "antigravity"
+				}
+			}
 			if profile.ProviderID == "" || profile.ClientID == "" {
 				return OAuth{}, false, fmt.Errorf("OAuth profile %d requires provider_id and client_id", i)
 			}
@@ -102,7 +116,7 @@ func LoadOAuth() (OAuth, bool, error) {
 		}
 	}
 
-	hasClient := cfg.GeminiClientID != "" || cfg.CodexClientID != "" || cfg.ClaudeClientID != "" || cfg.GitHubClientID != "" || len(cfg.Profiles) > 0
+	hasClient := cfg.GeminiClientID != "" || cfg.CodexClientID != "" || cfg.ClaudeClientID != "" || cfg.GitHubClientID != "" || cfg.AntigravityClientID != "" || len(cfg.Profiles) > 0
 	if cfg.PublicBaseURL == "" && !hasClient {
 		return OAuth{}, false, nil
 	}
@@ -110,7 +124,7 @@ func LoadOAuth() (OAuth, bool, error) {
 		return OAuth{}, false, fmt.Errorf("KOKEKOKKOR_OAUTH_PUBLIC_BASE_URL is required when OAuth is enabled")
 	}
 	if !hasClient {
-		return OAuth{}, false, fmt.Errorf("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID, KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID, KOKEKOKKOR_OAUTH_CLAUDE_CLIENT_ID, KOKEKOKKOR_OAUTH_GITHUB_CLIENT_ID, or KOKEKOKKOR_OAUTH_PROFILES_JSON is required when OAuth is enabled")
+		return OAuth{}, false, fmt.Errorf("KOKEKOKKOR_OAUTH_GEMINI_CLIENT_ID, KOKEKOKKOR_OAUTH_CODEX_CLIENT_ID, KOKEKOKKOR_OAUTH_CLAUDE_CLIENT_ID, KOKEKOKKOR_OAUTH_GITHUB_CLIENT_ID, KOKEKOKKOR_OAUTH_ANTIGRAVITY_CLIENT_ID, or KOKEKOKKOR_OAUTH_PROFILES_JSON is required when OAuth is enabled")
 	}
 	parsed, err := url.Parse(cfg.PublicBaseURL)
 	if err != nil || parsed.Host == "" {

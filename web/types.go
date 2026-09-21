@@ -76,6 +76,15 @@ func DefaultProviderPresets() []ProviderPreset {
 			KeyPrefix:   "AIza...",
 		},
 		{
+			ID:          "antigravity",
+			Name:        "Antigravity (Google Cloud Code)",
+			Protocol:    "gemini",
+			BaseURL:     "https://cloudcode-pa.googleapis.com",
+			Description: "Claude Opus 4.6 & Gemini 3 Pro via Cloud Code Private API",
+			HasOAuth:    true,
+			KeyPrefix:   "ya29...",
+		},
+		{
 			ID:          "deepseek",
 			Name:        "DeepSeek",
 			Protocol:    "openai",

@@ -33,7 +33,16 @@ func (r *Runtime) AnthropicMessagesToGemini(ctx context.Context, target provider
 	if err != nil {
 		return upstream.Response{}, apptranslation.WrapRequest(err)
 	}
-	response, err := r.client.Do(ctx, target, upstream.Request{Method: http.MethodPost, Path: path, Header: header, Body: encoded})
+	reqHeader := header
+	if target.IsAntigravity() {
+		path = geminiProtocol.AntigravityGenerateContentPath()
+		reqHeader = geminiProtocol.AntigravityHeaders(header)
+		encoded, err = geminiProtocol.FormatAntigravityRequest(encoded, model, "")
+		if err != nil {
+			return upstream.Response{}, apptranslation.WrapRequest(err)
+		}
+	}
+	response, err := r.client.Do(ctx, target, upstream.Request{Method: http.MethodPost, Path: path, Header: reqHeader, Body: encoded})
 	if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
 		return response, err
 	}

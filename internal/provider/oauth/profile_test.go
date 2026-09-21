@@ -170,6 +170,25 @@ func TestGitHubCopilotProfile(t *testing.T) {
 	}
 }
 
+func TestAntigravityProfile(t *testing.T) {
+	profile, err := AntigravityProfile(ProfileOptions{})
+	if err != nil {
+		t.Fatalf("AntigravityProfile() error = %v", err)
+	}
+	if profile.ID != "antigravity" {
+		t.Fatalf("profile.ID = %q, want %q", profile.ID, "antigravity")
+	}
+	if profile.ClientID != AntigravityClientID || profile.ClientSecret != AntigravityClientSecret {
+		t.Fatalf("profile credentials = (%q, %q)", profile.ClientID, profile.ClientSecret)
+	}
+	if profile.AuthorizationURL != GoogleAuthorizationURL || profile.TokenURL != GoogleTokenURL {
+		t.Fatalf("profile URLs = (%q, %q)", profile.AuthorizationURL, profile.TokenURL)
+	}
+	if len(profile.Scopes) != 3 {
+		t.Fatalf("profile.Scopes = %#v, want 3 scopes", profile.Scopes)
+	}
+}
+
 func TestChatGPTProfileAlias(t *testing.T) {
 	profile, err := ChatGPTProfile(ProfileOptions{})
 	if err != nil {
