@@ -122,3 +122,51 @@ func TestTranslatedBackgroundResponsesCanBeCancelled(t *testing.T) {
 		t.Fatalf("cancelled response = %#v", cancelled)
 	}
 }
+
+func TestDeletingActiveBackgroundResponseDoesNotRecreateResource(t *testing.T) {
+	cancelled := make(chan struct{})
+	client := &fakeClient{do: func(ctx context.Context, _ provider.Target, _ upstream.Request) (upstream.Response, error) {
+		<-ctx.Done()
+		close(cancelled)
+		return upstream.Response{}, ctx.Err()
+	}}
+	runtime := New(client)
+
+	response, err := runtime.OpenAIResponsesToAnthropic(context.Background(), provider.Target{
+		ID: "anthropic", Protocol: provider.ProtocolAnthropic, BaseURL: "https://anthropic.example",
+	}, "claude-upstream", http.Header{}, []byte(`{"model":"portable","input":"hello","background":true}`))
+	if err != nil {
+		t.Fatalf("OpenAIResponsesToAnthropic() error = %v", err)
+	}
+	var initial struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(response.Body, &initial); err != nil {
+		t.Fatalf("decode initial background response: %v", err)
+	}
+
+	status, _, handled, err := runtime.HandleStoredResponse(
+		context.Background(), http.MethodDelete, "/v1/responses/"+initial.ID,
+	)
+	if err != nil {
+		t.Fatalf("delete background response: %v", err)
+	}
+	if !handled || status != http.StatusOK {
+		t.Fatalf("delete = status %d handled %v", status, handled)
+	}
+
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("background worker was not cancelled")
+	}
+	_, _, handled, err = runtime.HandleStoredResponse(
+		context.Background(), http.MethodGet, "/v1/responses/"+initial.ID,
+	)
+	if err != nil {
+		t.Fatalf("retrieve deleted background response: %v", err)
+	}
+	if handled {
+		t.Fatal("deleted background response was recreated")
+	}
+}
