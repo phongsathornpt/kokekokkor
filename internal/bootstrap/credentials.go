@@ -5,22 +5,22 @@ import (
 	"errors"
 	"fmt"
 
-	appcredentials "github.com/phongsathornpt/kokekokkor/internal/application/credentials"
 	"github.com/phongsathornpt/kokekokkor/internal/config"
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/credential"
-	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/persistence/sqlite"
+	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/repository/sqlite"
 	"github.com/phongsathornpt/kokekokkor/internal/security/secretbox"
+	appcredential "github.com/phongsathornpt/kokekokkor/internal/usecase/credential"
 )
 
-func resolveCredentials(ctx context.Context, cfg config.Config, snapshot domaincatalog.Snapshot, store *sqlitestore.Store) (*appcredentials.Service, error) {
+func resolveCredentials(ctx context.Context, cfg config.Config, snapshot domaincatalog.Snapshot, store *sqlitestore.Store) (*appcredential.Service, error) {
 	environment := environmentCredentials(cfg)
 	encryption, enabled, err := config.LoadCredentialEncryption()
 	if err != nil {
 		return nil, err
 	}
 	if !enabled {
-		return appcredentials.NewService(nil, environment), nil
+		return appcredential.NewService(nil, environment), nil
 	}
 	if store == nil {
 		return nil, fmt.Errorf("credential encryption requires KOKEKOKKOR_DATABASE_DSN")
@@ -41,7 +41,7 @@ func resolveCredentials(ctx context.Context, cfg config.Config, snapshot domainc
 		switch {
 		case err == nil:
 			resolved[provider.ID] = string(value)
-		case errors.Is(err, appcredentials.ErrNotFound):
+		case errors.Is(err, appcredential.ErrNotFound):
 			seed := environment[provider.ID]
 			if seed == "" {
 				continue
@@ -54,7 +54,7 @@ func resolveCredentials(ctx context.Context, cfg config.Config, snapshot domainc
 			return nil, err
 		}
 	}
-	return appcredentials.NewService(repository, resolved), nil
+	return appcredential.NewService(repository, resolved), nil
 }
 
 func environmentCredentials(cfg config.Config) map[string]string {

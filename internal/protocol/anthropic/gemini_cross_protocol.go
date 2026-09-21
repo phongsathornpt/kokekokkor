@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
-	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
-	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
+	apptranslation "github.com/phongsathornpt/kokekokkor/internal/usecase/translation"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/upstream"
 )
 
 type geminiCrossProtocolTranslator interface {

@@ -81,3 +81,60 @@ func TestGenericProfileRequiresHTTPS(t *testing.T) {
 		t.Fatal("GenericProfile() error = nil, want HTTPS validation error")
 	}
 }
+
+func TestCodexProfile(t *testing.T) {
+	profile, err := CodexProfile(ProfileOptions{})
+	if err != nil {
+		t.Fatalf("CodexProfile() error = %v", err)
+	}
+	if profile.ID != "openai" {
+		t.Fatalf("profile.ID = %q, want %q", profile.ID, "openai")
+	}
+	if profile.ClientID != OpenAICodexClientID {
+		t.Fatalf("profile.ClientID = %q, want %q", profile.ClientID, OpenAICodexClientID)
+	}
+	if profile.AuthorizationURL != OpenAIAuthorizationURL || profile.TokenURL != OpenAITokenURL {
+		t.Fatalf("profile URLs = (%q, %q)", profile.AuthorizationURL, profile.TokenURL)
+	}
+	if len(profile.Scopes) != 5 {
+		t.Fatalf("profile.Scopes = %#v, want 5 scopes", profile.Scopes)
+	}
+}
+
+func TestCodexProfileOverrides(t *testing.T) {
+	profile, err := CodexProfile(ProfileOptions{
+		ProviderID:       "openai-custom",
+		ClientID:         "custom-client-id",
+		AuthorizationURL: "https://auth.custom.com/authorize",
+		TokenURL:         "https://auth.custom.com/token",
+		Scopes:           []string{"custom-scope"},
+		AuthorizationParams: map[string]string{
+			"prompt": "login",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CodexProfile() error = %v", err)
+	}
+	if profile.ID != "openai-custom" || profile.ClientID != "custom-client-id" {
+		t.Fatalf("profile = %#v", profile)
+	}
+	if profile.AuthorizationURL != "https://auth.custom.com/authorize" || profile.TokenURL != "https://auth.custom.com/token" {
+		t.Fatalf("profile URLs = (%q, %q)", profile.AuthorizationURL, profile.TokenURL)
+	}
+	if len(profile.Scopes) != 1 || profile.Scopes[0] != "custom-scope" {
+		t.Fatalf("Scopes = %#v", profile.Scopes)
+	}
+	if profile.AuthorizationParams["prompt"] != "login" {
+		t.Fatalf("AuthorizationParams = %#v", profile.AuthorizationParams)
+	}
+}
+
+func TestChatGPTProfileAlias(t *testing.T) {
+	profile, err := ChatGPTProfile(ProfileOptions{})
+	if err != nil {
+		t.Fatalf("ChatGPTProfile() error = %v", err)
+	}
+	if profile.ID != "openai" || profile.ClientID != OpenAICodexClientID {
+		t.Fatalf("profile = %#v", profile)
+	}
+}

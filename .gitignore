@@ -6,3 +6,6 @@ bin/
 dist/
 coverage.out
 *.test
+node_modules/
+tmp/
+build-errors.log

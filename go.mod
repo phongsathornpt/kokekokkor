@@ -2,7 +2,10 @@ module github.com/phongsathornpt/kokekokkor
 
 go 1.27
 
-require modernc.org/sqlite v1.58.0
+require (
+	github.com/a-h/templ v0.3.1020
+	modernc.org/sqlite v1.58.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

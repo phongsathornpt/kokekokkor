@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	appoauth "github.com/phongsathornpt/kokekokkor/internal/application/oauth"
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
+	appoauth "github.com/phongsathornpt/kokekokkor/internal/usecase/oauth"
 )
 
 func TestExchangerRedactsTokenEndpointErrorBody(t *testing.T) {

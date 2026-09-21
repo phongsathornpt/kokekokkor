@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sync"
 
-	apptranslation "github.com/phongsathornpt/kokekokkor/internal/application/translation"
 	geminiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/gemini"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
+	apptranslation "github.com/phongsathornpt/kokekokkor/internal/usecase/translation"
 )
 
 var (

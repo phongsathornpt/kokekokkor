@@ -3,11 +3,11 @@ package bootstrap
 import (
 	"context"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
 	"github.com/phongsathornpt/kokekokkor/internal/config"
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
-	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/persistence/sqlite"
+	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/repository/sqlite"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
 )
 
 func resolveCatalog(ctx context.Context, cfg config.Config) (domaincatalog.Snapshot, *sqlitestore.Store, error) {

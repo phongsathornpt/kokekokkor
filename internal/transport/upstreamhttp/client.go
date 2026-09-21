@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/upstream"
 )
 
 const maxResponseBodyBytes = 64 << 20

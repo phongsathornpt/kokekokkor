@@ -3,16 +3,16 @@ package bootstrap
 import (
 	"net/http"
 
-	appcatalog "github.com/phongsathornpt/kokekokkor/internal/application/catalog"
-	appcredentials "github.com/phongsathornpt/kokekokkor/internal/application/credentials"
-	"github.com/phongsathornpt/kokekokkor/internal/application/routing"
 	"github.com/phongsathornpt/kokekokkor/internal/config"
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
-	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/persistence/sqlite"
-	"github.com/phongsathornpt/kokekokkor/internal/transport/adminhttp"
+	"github.com/phongsathornpt/kokekokkor/internal/handler/admin"
+	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/repository/sqlite"
+	appcatalog "github.com/phongsathornpt/kokekokkor/internal/usecase/catalog"
+	appcredential "github.com/phongsathornpt/kokekokkor/internal/usecase/credential"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
 )
 
-func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, credentials *appcredentials.Service, oauth oauthRuntime, store *sqlitestore.Store, router *routing.Table) (http.Handler, error) {
+func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, credentials *appcredential.Service, oauth oauthRuntime, store *sqlitestore.Store, router *routing.Table) (http.Handler, error) {
 	adminConfig := config.LoadAdmin(cfg.GatewayAPIKey)
 	if !adminConfig.Enabled || adminConfig.Password == "" {
 		return nil, nil

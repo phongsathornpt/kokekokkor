@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/phongsathornpt/kokekokkor/internal/application/upstream"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/responsestate"
 	openaiProtocol "github.com/phongsathornpt/kokekokkor/internal/protocol/openai"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/upstream"
 )
 
 type backgroundJob struct {
