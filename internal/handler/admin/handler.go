@@ -88,8 +88,14 @@ func newHandler(snapshot domaincatalog.Snapshot, catalog CatalogEditor, credenti
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
-	case r.Method == http.MethodGet && (r.URL.Path == "/admin" || r.URL.Path == "/admin/"):
-		h.render(w, r)
+	case r.Method == http.MethodGet && (r.URL.Path == "/admin" || r.URL.Path == "/admin/" || r.URL.Path == "/admin/overview"):
+		h.renderOverview(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/admin/providers":
+		h.renderProviders(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/admin/defaults":
+		h.renderDefaults(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/admin/routes":
+		h.renderRoutes(w, r)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/admin/oauth/"):
 		h.disconnect(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/admin/providers":
@@ -116,6 +122,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request) {
+	h.renderOverview(w, r)
+}
+
+func (h *Handler) renderOverview(w http.ResponseWriter, r *http.Request) {
 	data, err := h.view(r.Context())
 	if err != nil {
 		http.Error(w, "admin state unavailable", http.StatusInternalServerError)
@@ -123,7 +133,40 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = web.RenderDashboard(r.Context(), w, data)
+	_ = web.RenderOverview(r.Context(), w, data)
+}
+
+func (h *Handler) renderProviders(w http.ResponseWriter, r *http.Request) {
+	data, err := h.view(r.Context())
+	if err != nil {
+		http.Error(w, "admin state unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = web.RenderProviders(r.Context(), w, data)
+}
+
+func (h *Handler) renderDefaults(w http.ResponseWriter, r *http.Request) {
+	data, err := h.view(r.Context())
+	if err != nil {
+		http.Error(w, "admin state unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = web.RenderDefaults(r.Context(), w, data)
+}
+
+func (h *Handler) renderRoutes(w http.ResponseWriter, r *http.Request) {
+	data, err := h.view(r.Context())
+	if err != nil {
+		http.Error(w, "admin state unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = web.RenderRoutes(r.Context(), w, data)
 }
 
 func (h *Handler) disconnect(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,20 @@ package web
 
 import "strconv"
 
+func navLinkClass(active bool) string {
+	if active {
+		return "bg-indigo-600/15 text-indigo-300 font-semibold border border-indigo-500/30 shadow-sm"
+	}
+	return "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
+}
+
+func navIconClass(active bool) string {
+	if active {
+		return "w-4 h-4 text-indigo-400"
+	}
+	return "w-4 h-4 text-gray-400"
+}
+
 templ Sidebar(data DashboardData) {
 	<aside class="w-64 min-w-[16rem] bg-[#090b11] border-r border-[#1a1d25] flex flex-col sticky top-0 h-screen p-5 z-50 shrink-0">
 		<div class="flex items-center gap-3 pb-4 mb-3 border-b border-[#1a1d25]">
@@ -17,23 +31,23 @@ templ Sidebar(data DashboardData) {
 			</div>
 		</div>
 
-		<nav class="flex-1 flex flex-col gap-1 overflow-y-auto pr-1">
+		<nav class="flex-1 flex flex-col gap-1 overflow-y-auto pr-1" hx-boost="true">
 			<div class="text-[10px] font-bold uppercase tracking-wider text-gray-500 mt-2 mb-1 px-2">Gateway Core</div>
-			<a href="#overview" class="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all">
-				@IconCube("w-4 h-4 text-indigo-400")
+			<a href="/admin" class={ "flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-all", navLinkClass(data.ActivePage == PageOverview || data.ActivePage == "") }>
+				@IconCube(navIconClass(data.ActivePage == PageOverview || data.ActivePage == ""))
 				<span>Overview</span>
 			</a>
-			<a href="#providers" class="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all">
-				@IconServer("w-4 h-4 text-indigo-400")
+			<a href="/admin/providers" class={ "flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-all", navLinkClass(data.ActivePage == PageProviders) }>
+				@IconServer(navIconClass(data.ActivePage == PageProviders))
 				<span>Providers</span>
 				<span class="ml-auto text-[11px] font-semibold bg-[#191c26] text-gray-400 px-2 py-0.5 rounded-full border border-[#262933]">{ strconv.Itoa(len(data.Providers)) }</span>
 			</a>
-			<a href="#defaults" class="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all">
-				@IconSliders("w-4 h-4 text-indigo-400")
+			<a href="/admin/defaults" class={ "flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-all", navLinkClass(data.ActivePage == PageDefaults) }>
+				@IconSliders(navIconClass(data.ActivePage == PageDefaults))
 				<span>Protocol Defaults</span>
 			</a>
-			<a href="#routes" class="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all">
-				@IconRoute("w-4 h-4 text-sky-400")
+			<a href="/admin/routes" class={ "flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-all", navLinkClass(data.ActivePage == PageRoutes) }>
+				@IconRoute(navIconClass(data.ActivePage == PageRoutes))
 				<span>Model Routes</span>
 				<span class="ml-auto text-[11px] font-semibold bg-[#191c26] text-gray-400 px-2 py-0.5 rounded-full border border-[#262933]">{ strconv.Itoa(len(data.Routes)) }</span>
 			</a>

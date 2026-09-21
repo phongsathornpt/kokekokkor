@@ -9,3 +9,5 @@ coverage.out
 node_modules/
 tmp/
 build-errors.log
+*_templ.go
+.commandcode/

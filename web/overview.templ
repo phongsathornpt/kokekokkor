@@ -1,0 +1,183 @@
+package web
+
+import "strconv"
+
+templ Overview(data DashboardData) {
+	@AdminShell("kokekokkor admin - overview", data) {
+		<!-- Top Bar -->
+		<div class="flex items-center justify-between pb-6 mb-8 border-b border-[#1a1d25]">
+			<div class="flex items-center gap-2 text-xs text-gray-400">
+				<span>Console</span>
+				<span class="text-gray-600">/</span>
+				<span class="font-medium text-gray-200">Overview</span>
+			</div>
+			<div class="flex items-center gap-2 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+				<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+				Gateway Active
+			</div>
+		</div>
+
+		<!-- Stats / Overview Bar -->
+		<section id="overview-metrics" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+			<a href="/admin/providers" class="bg-[#12141a] hover:bg-[#151820] border border-[#262933] hover:border-indigo-500/50 rounded-xl p-4 flex items-center gap-3.5 transition-all group">
+				<div class="w-10 h-10 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+					@IconServer("w-5 h-5")
+				</div>
+				<div>
+					<div class="text-xs font-medium text-gray-400">Providers</div>
+					<div class="text-sm font-bold text-white mt-0.5">{ strconv.Itoa(len(data.Providers)) } configured</div>
+				</div>
+			</a>
+			<a href="/admin/routes" class="bg-[#12141a] hover:bg-[#151820] border border-[#262933] hover:border-sky-500/50 rounded-xl p-4 flex items-center gap-3.5 transition-all group">
+				<div class="w-10 h-10 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+					@IconRoute("w-5 h-5")
+				</div>
+				<div>
+					<div class="text-xs font-medium text-gray-400">Model Routes</div>
+					<div class="text-sm font-bold text-white mt-0.5">{ strconv.Itoa(len(data.Routes)) } active</div>
+				</div>
+			</a>
+			<div class="bg-[#12141a] border border-[#262933] rounded-xl p-4 flex items-center gap-3.5">
+				<div class="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+					@IconShieldCheck("w-5 h-5")
+				</div>
+				<div>
+					<div class="text-xs font-medium text-gray-400">OAuth / PKCE</div>
+					<div class="text-sm font-bold text-white mt-0.5">AES-256 sealed</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Overview Content Grid -->
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+			<!-- Configured Providers Summary -->
+			<div class="bg-[#12141a] border border-[#262933] rounded-xl p-5 flex flex-col gap-4">
+				<div class="flex items-center justify-between pb-3 border-b border-[#1a1d25]">
+					<div class="flex items-center gap-2">
+						@IconServer("w-4 h-4 text-indigo-400")
+						<h2 class="text-sm font-bold text-white">Upstream Providers</h2>
+					</div>
+					<a href="/admin/providers" class="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
+						Manage &rarr;
+					</a>
+				</div>
+				if len(data.Providers) > 0 {
+					<div class="flex flex-col gap-2">
+						for _, p := range data.Providers {
+							<div class="flex items-center justify-between p-3 bg-[#0d0e12] border border-[#262933] rounded-lg text-xs">
+								<div class="flex items-center gap-2.5 min-w-0">
+									if p.Protocol == "openai" {
+										@IconOpenAI("w-4 h-4 text-emerald-400 shrink-0")
+									} else if p.Protocol == "anthropic" {
+										@IconAnthropic("w-4 h-4 text-orange-400 shrink-0")
+									} else if p.Protocol == "gemini" {
+										@IconGemini("w-4 h-4 text-sky-400 shrink-0")
+									} else {
+										@IconServer("w-4 h-4 text-gray-400 shrink-0")
+									}
+									<span class="font-semibold text-white truncate">{ p.ID }</span>
+									<span class={ "text-[10px] font-medium px-1.5 py-0.5 rounded border", providerTagClass(p.Protocol) }>{ p.Protocol }</span>
+								</div>
+								<div class="flex items-center gap-2 shrink-0">
+									if p.APIKey {
+										<span class="text-[11px] text-emerald-400 font-medium">key configured</span>
+									}
+									if p.OAuthConnected {
+										<span class="text-[11px] text-emerald-400 font-medium">connected</span>
+										<form hx-delete={ "/admin/oauth/" + p.ID } class="inline">
+											<input type="hidden" name="csrf_token" value={ data.CSRF }/>
+											<button type="submit" class="text-[11px] text-rose-400 hover:text-rose-300 font-medium cursor-pointer">
+												Disconnect OAuth
+											</button>
+										</form>
+									} else if p.OAuthAvailable {
+										<span class="text-[11px] text-gray-400 font-medium">not connected</span>
+										<a href={ templ.SafeURL("/oauth/" + p.ID + "/start") } class="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium">Connect OAuth &rarr;</a>
+									}
+									if p.Enabled {
+										<span class="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+											<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+											enabled
+										</span>
+									} else {
+										<span class="inline-flex items-center gap-1 text-[11px] text-gray-400 font-medium">
+											<span class="w-1.5 h-1.5 rounded-full bg-gray-500"></span>
+											disabled
+										</span>
+									}
+								</div>
+							</div>
+						}
+					</div>
+				} else {
+					<p class="text-xs text-gray-400">No providers configured yet.</p>
+				}
+			</div>
+
+			<!-- Active Fallback Pipelines Summary -->
+			<div class="bg-[#12141a] border border-[#262933] rounded-xl p-5 flex flex-col gap-4">
+				<div class="flex items-center justify-between pb-3 border-b border-[#1a1d25]">
+					<div class="flex items-center gap-2">
+						@IconRoute("w-4 h-4 text-sky-400")
+						<h2 class="text-sm font-bold text-white">Active Model Routes</h2>
+					</div>
+					<a href="/admin/routes" class="text-xs font-medium text-sky-400 hover:text-sky-300 transition-colors">
+						Configure &rarr;
+					</a>
+				</div>
+				if len(data.Routes) > 0 {
+					<div class="flex flex-col gap-2">
+						for _, r := range data.Routes {
+							<div class="p-3 bg-[#0d0e12] border border-[#262933] rounded-lg flex flex-col gap-2 text-xs">
+								<div class="flex items-center justify-between">
+									<div class="flex items-center gap-2">
+										@IconCube("w-3.5 h-3.5 text-indigo-400")
+										<span class="font-semibold text-white">{ r.Model }</span>
+									</div>
+									<span class="text-[10px] text-gray-400 font-mono">{ strconv.Itoa(len(r.Targets)) } target{ targetPlural(len(r.Targets)) }</span>
+								</div>
+								<div class="flex items-center flex-wrap gap-1.5">
+									for idx, target := range r.Targets {
+										if idx > 0 {
+											@IconArrowRight("w-3 h-3 text-gray-500 shrink-0")
+										}
+										<span class="bg-[#181b24] border border-[#262933] px-2 py-0.5 text-[11px] font-mono text-gray-300 rounded">{ target }</span>
+									}
+								</div>
+							</div>
+						}
+					</div>
+				} else {
+					<p class="text-xs text-gray-400">No model-specific routes configured.</p>
+				}
+			</div>
+		</div>
+
+		<!-- Protocol Defaults Quick View -->
+		<div class="bg-[#12141a] border border-[#262933] rounded-xl p-5 mb-8">
+			<div class="flex items-center justify-between pb-3 border-b border-[#1a1d25] mb-4">
+				<div class="flex items-center gap-2">
+					@IconSliders("w-4 h-4 text-indigo-400")
+					<h2 class="text-sm font-bold text-white">Protocol Defaults</h2>
+				</div>
+				<a href="/admin/defaults" class="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
+					Edit Defaults &rarr;
+				</a>
+			</div>
+			<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+				for _, def := range data.Defaults {
+					<div class="p-3 bg-[#0d0e12] border border-[#262933] rounded-lg flex items-center justify-between text-xs">
+						<span class="font-medium text-gray-300 capitalize">{ def.Protocol }</span>
+						<span class="font-mono text-[11px] px-2 py-0.5 rounded bg-[#181b24] text-indigo-300 border border-[#262933]">
+							if def.ProviderID != "" {
+								{ def.ProviderID }
+							} else {
+								none
+							}
+						</span>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
