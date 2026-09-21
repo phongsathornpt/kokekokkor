@@ -77,7 +77,6 @@ func TestResponsesStateRejectsNonportableContinuation(t *testing.T) {
 	}
 }
 
-
 func TestResponsesStateBackgroundUsesShortRetention(t *testing.T) {
 	ctx := context.Background()
 	store := newMemoryResponseStateStore()
