@@ -3,6 +3,7 @@ package translator
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/phongsathornpt/kokekokkor/internal/domain/llm"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/responsestate"
@@ -73,5 +74,34 @@ func TestResponsesStateRejectsNonportableContinuation(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("resolveResponsesState() error = nil, want nonportable continuation error")
+	}
+}
+
+
+func TestResponsesStateBackgroundUsesShortRetention(t *testing.T) {
+	ctx := context.Background()
+	store := newMemoryResponseStateStore()
+	runtime := &Runtime{responseState: store}
+
+	before := time.Now()
+	err := runtime.persistResponsesState(ctx, responseStatePlan{
+		state: &llm.ResponseState{Store: true, Background: true},
+	}, llm.Response{
+		ID:         "resp_background",
+		Content:    []llm.ContentBlock{llm.TextBlock{Text: "done"}},
+		StopReason: llm.StopReasonEndTurn,
+	})
+	if err != nil {
+		t.Fatalf("persistResponsesState() error = %v", err)
+	}
+
+	record, err := store.LoadResponse(ctx, "resp_background")
+	if err != nil {
+		t.Fatalf("LoadResponse() error = %v", err)
+	}
+	minExpiry := before.Add(responsestate.BackgroundRetention - time.Second)
+	maxExpiry := time.Now().Add(responsestate.BackgroundRetention + time.Second)
+	if record.ExpiresAt.Before(minExpiry) || record.ExpiresAt.After(maxExpiry) {
+		t.Fatalf("ExpiresAt = %v, want background retention around %v", record.ExpiresAt, responsestate.BackgroundRetention)
 	}
 }
