@@ -101,6 +101,8 @@ func (r *Runtime) runBackgroundResponses(ctx context.Context, id string, plan re
 	response.ID = id
 	response.PreviousResponseID = plan.state.PreviousResponseID
 	response.ConversationID = plan.state.ConversationID
+	response.Background = true
+	response.Store = true
 	if err := r.persistResponsesState(context.Background(), plan, response); err != nil {
 		r.setBackgroundStatus(id, "failed", err.Error())
 	}
