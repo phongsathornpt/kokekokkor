@@ -44,6 +44,8 @@ func EncodeResponsesResponse(response llm.Response) ([]byte, error) {
 		Model:              response.Model,
 		PreviousResponseID: response.PreviousResponseID,
 		Conversation:       conversation,
+		Background:         response.Background,
+		Store:              response.Store,
 		Output:             output,
 		OutputText:         outputText,
 		Usage: responseUsage{
