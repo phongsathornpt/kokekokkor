@@ -73,6 +73,8 @@ type responseObject struct {
 	Model              string                `json:"model"`
 	PreviousResponseID string                `json:"previous_response_id,omitempty"`
 	Conversation       *responseConversation `json:"conversation,omitempty"`
+	Background         bool                  `json:"background"`
+	Store              bool                  `json:"store"`
 	Output             []responseOutputItem  `json:"output"`
 	OutputText         string                `json:"output_text,omitempty"`
 	Usage              responseUsage         `json:"usage"`
