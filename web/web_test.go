@@ -313,3 +313,48 @@ func TestRenderLogin(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderProviderModelsAndTestButton(t *testing.T) {
+	data := sampleData()
+	data.Providers = append(data.Providers, web.ProviderView{
+		ID:       "antigravity",
+		Protocol: "gemini",
+		BaseURL:  "https://cloudcode-pa.googleapis.com",
+		Enabled:  true,
+		Models: []web.ModelView{
+			{
+				ID:           "claude-opus-4-6-thinking",
+				Name:         "Claude Opus 4.6 (Thinking)",
+				Capabilities: []string{"thinking", "code", "chat"},
+				IsDefault:    true,
+			},
+			{
+				ID:            "gemini-3.8-flash-high",
+				Name:          "Gemini 3.8 Flash (High)",
+				UpstreamModel: "gemini-3.8-flash-high(high)",
+				Capabilities:  []string{"thinking", "fast"},
+			},
+		},
+	})
+
+	var buf bytes.Buffer
+	if err := web.RenderProviders(context.Background(), &buf, data); err != nil {
+		t.Fatalf("RenderProviders() error = %v", err)
+	}
+	output := buf.String()
+	expected := []string{
+		"Supported Models (2)",
+		"claude-opus-4-6-thinking",
+		"Claude Opus 4.6 (Thinking)",
+		"gemini-3.8-flash-high",
+		`hx-post="/admin/providers/antigravity/test-model"`,
+		"DEFAULT",
+		"thinking",
+		`data-copy="antigravity/claude-opus-4-6-thinking"`,
+	}
+	for _, substr := range expected {
+		if !strings.Contains(output, substr) {
+			t.Errorf("rendered providers missing expected substring: %q", substr)
+		}
+	}
+}

@@ -61,6 +61,15 @@ func (s *Service) HasAPIKey(providerID string) bool {
 	return s.values[strings.TrimSpace(providerID)] != ""
 }
 
+func (s *Service) GetAPIKey(providerID string) string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.values[strings.TrimSpace(providerID)]
+}
+
 func (s *Service) ForgetProvider(providerID string) {
 	if s == nil {
 		return

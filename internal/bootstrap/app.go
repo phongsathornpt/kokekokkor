@@ -77,7 +77,8 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		}
 		return nil, err
 	}
-	admin, err := resolveAdminHandler(cfg, snapshot, credentials, oauth, catalogStore, router)
+	bufferedUpstream := upstreamhttp.NewWithBearerTokenResolver(cfg.Anthropic.Version, oauth.bearerTokens)
+	admin, err := resolveAdminHandler(cfg, snapshot, credentials, oauth, catalogStore, router, bufferedUpstream)
 	if err != nil {
 		if catalogStore != nil {
 			_ = catalogStore.Close()
@@ -88,7 +89,6 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	anthropicTarget := protocolDefaultTarget(targets, defaults, "anthropic")
 	geminiTarget := protocolDefaultTarget(targets, defaults, "gemini")
 
-	bufferedUpstream := upstreamhttp.NewWithBearerTokenResolver(cfg.Anthropic.Version, oauth.bearerTokens)
 	crossProtocol := translator.New(bufferedUpstream)
 	if catalogStore != nil {
 		crossProtocol = translator.NewWithResponseStateStore(bufferedUpstream, catalogStore)

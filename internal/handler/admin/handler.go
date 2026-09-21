@@ -16,6 +16,7 @@ import (
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 	appoauth "github.com/phongsathornpt/kokekokkor/internal/usecase/oauth"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/probing"
 	"github.com/phongsathornpt/kokekokkor/web"
 )
 
@@ -45,15 +46,21 @@ type CatalogEditor interface {
 
 type CredentialEditor interface {
 	HasAPIKey(string) bool
+	GetAPIKey(string) string
 	Editable() bool
 	ForgetProvider(string)
 	SetAPIKey(context.Context, string, string) error
 	DeleteAPIKey(context.Context, string) error
 }
 
+type ProbingService interface {
+	TestModel(context.Context, provider.Target, string) probing.TestResult
+}
+
 type staticCredentialStatus map[string]bool
 
 func (s staticCredentialStatus) HasAPIKey(providerID string) bool { return s[providerID] }
+func (staticCredentialStatus) GetAPIKey(providerID string) string { return "" }
 func (staticCredentialStatus) Editable() bool                     { return false }
 func (staticCredentialStatus) ForgetProvider(string)              {}
 func (staticCredentialStatus) SetAPIKey(context.Context, string, string) error {
@@ -70,6 +77,7 @@ type Handler struct {
 	tokens         TokenStore
 	oauthProviders map[string]domainoauth.Provider
 	oauthService   OAuthService
+	prober         ProbingService
 }
 
 func New(snapshot domaincatalog.Snapshot, tokens TokenStore, oauthProviderIDs []string, apiKeys map[string]bool) (*Handler, error) {
@@ -91,6 +99,10 @@ func (h *Handler) SetOAuthService(service OAuthService, profiles map[string]doma
 			h.oauthProviders[id] = p
 		}
 	}
+}
+
+func (h *Handler) SetProbingService(prober ProbingService) {
+	h.prober = prober
 }
 
 func newHandler(snapshot domaincatalog.Snapshot, catalog CatalogEditor, credentials CredentialEditor, tokens TokenStore, oauthProviderIDs []string) (*Handler, error) {
@@ -127,6 +139,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.manualExchange(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/import"):
 		h.importToken(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/admin/providers/") && strings.HasSuffix(r.URL.Path, "/test-model"):
+		h.testModel(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/admin/providers":
 		h.createProvider(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/admin/providers/update":
@@ -467,6 +481,110 @@ func (h *Handler) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	mutationOK(w)
 }
 
+func (h *Handler) testModel(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/admin/providers/")
+	providerID := strings.TrimSuffix(path, "/test-model")
+	if providerID == "" || strings.Contains(providerID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	modelID := strings.TrimSpace(r.FormValue("model"))
+	if modelID == "" {
+		mutationError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+
+	target, ok := h.findTarget(r.Context(), providerID)
+	if !ok {
+		mutationError(w, http.StatusNotFound, fmt.Sprintf("provider %q not found", providerID))
+		return
+	}
+
+	if h.prober == nil {
+		if r.Header.Get("HX-Request") == "true" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium text-ink-3 bg-plane-2 border border-rule-2" title="Prober service unavailable">
+				<span class="w-1.5 h-1.5 rounded-full bg-ink-disabled"></span>
+				<span>Probe unavailable</span>
+			</div>`)
+			return
+		}
+		mutationError(w, http.StatusInternalServerError, "probe service not configured")
+		return
+	}
+
+	res := h.prober.TestModel(r.Context(), target, modelID)
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if res.OK {
+			title := html.EscapeString(fmt.Sprintf("Response: %s", res.Snippet))
+			fmt.Fprintf(w, `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium text-ok bg-ok/10 border border-ok/20" title="%s">
+				<span class="w-1.5 h-1.5 rounded-full bg-ok"></span>
+				<span>200 OK (%dms)</span>
+			</div>`, title, res.LatencyMs)
+			return
+		}
+
+		errDesc := res.ErrorMessage
+		if errDesc == "" {
+			errDesc = fmt.Sprintf("HTTP %d error", res.StatusCode)
+		}
+		statusLabel := "Failed"
+		if res.StatusCode > 0 {
+			statusLabel = fmt.Sprintf("Failed (%d)", res.StatusCode)
+		}
+		title := html.EscapeString(errDesc)
+		fmt.Fprintf(w, `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium text-danger bg-danger/10 border border-danger/20" title="%s">
+			<span class="w-1.5 h-1.5 rounded-full bg-danger"></span>
+			<span>%s</span>
+		</div>`, title, html.EscapeString(statusLabel))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (h *Handler) findTarget(ctx context.Context, providerID string) (provider.Target, bool) {
+	snapshot := h.snapshot
+	if h.catalog != nil {
+		if loaded, err := h.catalog.Load(ctx); err == nil {
+			snapshot = loaded
+		}
+	}
+	for _, p := range snapshot.Providers {
+		if p.ID == providerID {
+			apiKey := ""
+			if h.credentials != nil {
+				apiKey = h.credentials.GetAPIKey(p.ID)
+			}
+			return provider.Target{
+				ID:       p.ID,
+				Protocol: p.Protocol,
+				BaseURL:  p.BaseURL,
+				APIKey:   apiKey,
+			}, true
+		}
+	}
+	for _, preset := range web.DefaultProviderPresets() {
+		if preset.ID == providerID {
+			apiKey := ""
+			if h.credentials != nil {
+				apiKey = h.credentials.GetAPIKey(preset.ID)
+			}
+			return provider.Target{
+				ID:       preset.ID,
+				Protocol: provider.Protocol(preset.Protocol),
+				BaseURL:  preset.BaseURL,
+				APIKey:   apiKey,
+			}, true
+		}
+	}
+	return provider.Target{}, false
+}
+
 func providerFromForm(r *http.Request, providerID string) (domaincatalog.Provider, error) {
 	protocolName := provider.Protocol(strings.TrimSpace(r.FormValue("protocol")))
 	switch protocolName {
@@ -645,6 +763,7 @@ func (h *Handler) view(ctx context.Context) (web.DashboardData, error) {
 		data.Providers = append(data.Providers, web.ProviderView{
 			ID: item.ID, Protocol: string(item.Protocol), BaseURL: item.BaseURL, Enabled: item.Enabled,
 			OAuthAvailable: oauthAvailable, OAuthConnected: connected, OAuthFlowType: flowType, APIKey: h.credentials.HasAPIKey(item.ID),
+			Models: web.ToModelViews(domaincatalog.DefaultModelsForProvider(item.ID)),
 		})
 	}
 	sort.Slice(data.Providers, func(i, j int) bool { return data.Providers[i].ID < data.Providers[j].ID })

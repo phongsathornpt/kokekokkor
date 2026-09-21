@@ -287,6 +287,21 @@
     color: var(--color-ink);
     border-color: var(--color-ink-3);
   }
+  .btn-xs {
+    min-height: 22px;
+    padding: 0.1875rem 0.4375rem;
+    font-size: 0.6875rem;
+    gap: 0.25rem;
+  }
+  .htmx-indicator {
+    display: none;
+  }
+  .htmx-request .htmx-indicator {
+    display: inline-flex;
+  }
+  .htmx-request.htmx-indicator {
+    display: inline-flex;
+  }
   .btn-danger {
     background-color: transparent;
     border-color: color-mix(in oklab, var(--color-bad) 45%, transparent);

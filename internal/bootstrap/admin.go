@@ -12,11 +12,13 @@ import (
 	sqlitestore "github.com/phongsathornpt/kokekokkor/internal/repository/sqlite"
 	appcatalog "github.com/phongsathornpt/kokekokkor/internal/usecase/catalog"
 	appcredential "github.com/phongsathornpt/kokekokkor/internal/usecase/credential"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/probing"
 	"github.com/phongsathornpt/kokekokkor/internal/usecase/routing"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/upstream"
 	"github.com/phongsathornpt/kokekokkor/web"
 )
 
-func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, credentials *appcredential.Service, oauth oauthRuntime, store *sqlitestore.Store, router *routing.Table) (http.Handler, error) {
+func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, credentials *appcredential.Service, oauth oauthRuntime, store *sqlitestore.Store, router *routing.Table, upstreamClient upstream.Client) (http.Handler, error) {
 	adminConfig := config.LoadAdmin(cfg.GatewayAPIKey)
 	if !adminConfig.Enabled || adminConfig.Password == "" {
 		return nil, nil
@@ -42,6 +44,9 @@ func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, cre
 	}
 	if oauth.service != nil {
 		handler.SetOAuthService(oauth.service, oauth.profiles)
+	}
+	if upstreamClient != nil {
+		handler.SetProbingService(probing.NewService(upstreamClient))
 	}
 
 	if oauth.handler != nil && catalog != nil {

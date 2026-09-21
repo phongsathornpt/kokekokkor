@@ -1,5 +1,9 @@
 package web
 
+import (
+	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
+)
+
 // PageName identifies the current admin page view.
 type PageName string
 
@@ -22,6 +26,24 @@ type DashboardData struct {
 	Protocols          []string
 }
 
+// ModelView represents a model available under a provider.
+type ModelView struct {
+	ID            string
+	Name          string
+	UpstreamModel string
+	Description   string
+	Capabilities  []string
+	IsDefault     bool
+}
+
+// EffectiveUpstreamModel returns the upstream model identifier or falls back to ID.
+func (m ModelView) EffectiveUpstreamModel() string {
+	if m.UpstreamModel != "" {
+		return m.UpstreamModel
+	}
+	return m.ID
+}
+
 // ProviderView represents a single provider target configuration in the dashboard.
 type ProviderView struct {
 	ID             string
@@ -32,6 +54,7 @@ type ProviderView struct {
 	OAuthConnected bool
 	OAuthFlowType  string
 	APIKey         bool
+	Models         []ModelView
 }
 
 // ProviderPreset represents a pre-configured provider target with known endpoints.
@@ -43,11 +66,32 @@ type ProviderPreset struct {
 	Description string
 	HasOAuth    bool
 	KeyPrefix   string
+	Models      []ModelView
+}
+
+// ToModelViews converts domain catalog models to ModelView presentation structs.
+func ToModelViews(models []domaincatalog.Model) []ModelView {
+	views := make([]ModelView, len(models))
+	for i, m := range models {
+		caps := make([]string, len(m.Capabilities))
+		for j, c := range m.Capabilities {
+			caps[j] = string(c)
+		}
+		views[i] = ModelView{
+			ID:            m.ID,
+			Name:          m.Name,
+			UpstreamModel: m.UpstreamModel,
+			Description:   m.Description,
+			Capabilities:  caps,
+			IsDefault:     m.IsDefault,
+		}
+	}
+	return views
 }
 
 // DefaultProviderPresets returns the standard list of 1-click provider presets.
 func DefaultProviderPresets() []ProviderPreset {
-	return []ProviderPreset{
+	presets := []ProviderPreset{
 		{
 			ID:          "openai",
 			Name:        "OpenAI",
@@ -121,6 +165,11 @@ func DefaultProviderPresets() []ProviderPreset {
 			KeyPrefix:   "not required",
 		},
 	}
+
+	for i := range presets {
+		presets[i].Models = ToModelViews(domaincatalog.DefaultModelsForProvider(presets[i].ID))
+	}
+	return presets
 }
 
 func PresetOAuthFlowType(providerID string) string {

@@ -35,7 +35,19 @@ templ ProviderPresetCard(preset ProviderPreset, data DashboardData) {
 				<span class="text-ink-disabled">Endpoint:</span>
 				<span class="text-ink-2 truncate">{ preset.BaseURL }</span>
 			</div>
-		</div>
+			if len(preset.Models) > 0 {
+				<div class="mt-2.5 flex flex-wrap items-center gap-1">
+					for i, m := range preset.Models {
+						if i < 3 {
+							<span class="tag text-[9px] font-mono">{ m.ID }</span>
+						}
+					}
+					if len(preset.Models) > 3 {
+						<span class="text-[9px] text-ink-3 font-mono font-medium">+{ strconv.Itoa(len(preset.Models) - 3) } models</span>
+					}
+				</div>
+			}
+			</div>
 
 		if configured != nil {
 			<div class="pt-3 border-t border-rule flex flex-col gap-2">

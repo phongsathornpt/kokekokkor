@@ -2,17 +2,20 @@ package adminhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
 	"github.com/phongsathornpt/kokekokkor/internal/domain/provider"
 	appoauth "github.com/phongsathornpt/kokekokkor/internal/usecase/oauth"
+	"github.com/phongsathornpt/kokekokkor/internal/usecase/probing"
 )
 
 type fakeTokens struct {
@@ -52,8 +55,9 @@ type fakeCredentials struct {
 	failSet   bool
 }
 
-func (f *fakeCredentials) HasAPIKey(providerID string) bool { return f.values[providerID] != "" }
-func (f *fakeCredentials) Editable() bool                   { return f.editable }
+func (f *fakeCredentials) HasAPIKey(providerID string) bool   { return f.values[providerID] != "" }
+func (f *fakeCredentials) GetAPIKey(providerID string) string { return f.values[providerID] }
+func (f *fakeCredentials) Editable() bool                     { return f.editable }
 func (f *fakeCredentials) ForgetProvider(providerID string) {
 	delete(f.values, providerID)
 	f.forgotten = providerID
@@ -629,5 +633,119 @@ func TestAdminOAuthManualExchangeAndImport(t *testing.T) {
 	}
 	if tokens.values["anthropic"].AccessToken != "sk-ant-oauth-token-999" {
 		t.Fatalf("tokens = %#v", tokens.values)
+	}
+}
+
+type fakeAdminProber struct {
+	result     probing.TestResult
+	lastTarget provider.Target
+	lastModel  string
+}
+
+func (f *fakeAdminProber) TestModel(_ context.Context, target provider.Target, modelID string) probing.TestResult {
+	f.lastTarget = target
+	f.lastModel = modelID
+	return f.result
+}
+
+func TestAdminTestModel(t *testing.T) {
+	catalog := &fakeCatalog{snapshot: domaincatalog.Snapshot{
+		Providers: []domaincatalog.Provider{
+			{ID: "antigravity", Protocol: provider.ProtocolGemini, BaseURL: "https://cloudcode-pa.googleapis.com", Enabled: true},
+		},
+	}}
+	creds := &fakeCredentials{values: map[string]string{"antigravity": "test-key-123"}}
+	handler, err := NewManageable(catalog.snapshot, catalog, creds, nil, nil)
+	if err != nil {
+		t.Fatalf("NewManageable() error = %v", err)
+	}
+
+	prober := &fakeAdminProber{
+		result: probing.TestResult{
+			OK:         true,
+			StatusCode: 200,
+			Latency:    240 * time.Millisecond,
+			LatencyMs:  240,
+			Snippet:    "Hello from Antigravity",
+		},
+	}
+	handler.SetProbingService(prober)
+
+	// 1. HTMX request - success
+	form := url.Values{"model": {"claude-opus-4-6-thinking"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/providers/antigravity/test-model", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "200 OK (240ms)") {
+		t.Fatalf("body = %q, want 200 OK (240ms)", body)
+	}
+	if prober.lastModel != "claude-opus-4-6-thinking" {
+		t.Errorf("lastModel = %q, want claude-opus-4-6-thinking", prober.lastModel)
+	}
+	if prober.lastTarget.APIKey != "test-key-123" {
+		t.Errorf("lastTarget.APIKey = %q, want test-key-123", prober.lastTarget.APIKey)
+	}
+
+	// 2. JSON request - success
+	req = httptest.NewRequest(http.MethodPost, "/admin/providers/antigravity/test-model", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var jsonRes probing.TestResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &jsonRes); err != nil {
+		t.Fatalf("unmarshal json response: %v", err)
+	}
+	if !jsonRes.OK || jsonRes.StatusCode != 200 || jsonRes.LatencyMs != 240 {
+		t.Fatalf("jsonRes = %#v", jsonRes)
+	}
+
+	// 3. HTMX request - failure
+	prober.result = probing.TestResult{
+		OK:           false,
+		StatusCode:   429,
+		Latency:      120 * time.Millisecond,
+		LatencyMs:    120,
+		ErrorMessage: "Quota exceeded",
+	}
+	req = httptest.NewRequest(http.MethodPost, "/admin/providers/antigravity/test-model", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (fragment rendered)", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Failed (429)") {
+		t.Fatalf("body = %q, want Failed (429)", rec.Body.String())
+	}
+
+	// 4. Missing model
+	req = httptest.NewRequest(http.MethodPost, "/admin/providers/antigravity/test-model", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing model status = %d, want 400", rec.Code)
+	}
+
+	// 5. Unknown provider
+	req = httptest.NewRequest(http.MethodPost, "/admin/providers/non-existent-xyz/test-model", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown provider status = %d, want 404", rec.Code)
 	}
 }

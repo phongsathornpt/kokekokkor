@@ -516,6 +516,27 @@ func TestE2E_AdminURLs(t *testing.T) {
 		}
 		csrfToken := matches[1]
 
+		// 2b. Test Model probe via POST /admin/providers/openai/test-model
+		testModelForm := url.Values{
+			"csrf_token": {csrfToken},
+			"model":      {"gpt-4o"},
+		}
+		testReq, _ := http.NewRequest(http.MethodPost, env.serverURL+"/admin/providers/openai/test-model", strings.NewReader(testModelForm.Encode()))
+		testReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		testReq.Header.Set("HX-Request", "true")
+		testResp, err := client.Do(testReq)
+		if err != nil {
+			t.Fatalf("POST /admin/providers/openai/test-model error = %v", err)
+		}
+		defer testResp.Body.Close()
+		if testResp.StatusCode != http.StatusOK {
+			t.Fatalf("test-model status = %d, want %d", testResp.StatusCode, http.StatusOK)
+		}
+		testBody, _ := io.ReadAll(testResp.Body)
+		if !strings.Contains(string(testBody), "200 OK") {
+			t.Fatalf("test-model body = %q, want 200 OK fragment", string(testBody))
+		}
+
 		// 3. Logout via POST /admin/logout
 		logoutForm := url.Values{"csrf_token": {csrfToken}}
 		logoutResp, err := client.PostForm(env.serverURL+"/admin/logout", logoutForm)

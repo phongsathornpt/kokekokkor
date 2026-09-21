@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	DefaultCodexClientID  = "app_EMoamEEZ73f0CkXaXp7hrann"
+	DefaultCodexClientID       = "app_EMoamEEZ73f0CkXaXp7hrann"
 	DefaultClaudeClientID      = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	DefaultGitHubClientID      = "Iv1.b507a08c87ecfe81"
 	DefaultAntigravityClientID = "REMOVED_GOOGLE_OAUTH_CLIENT_ID"
