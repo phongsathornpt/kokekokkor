@@ -29,8 +29,9 @@ func TestResponsesStateContinuationDoesNotInheritInstructions(t *testing.T) {
 		t.Fatalf("resolved first messages = %#v", resolved.Messages)
 	}
 	if err := runtime.persistResponsesState(ctx, plan, llm.Response{
-		ID:      "resp_1",
-		Content: []llm.ContentBlock{llm.TextBlock{Text: "first answer"}},
+		ID:         "resp_1",
+		Content:    []llm.ContentBlock{llm.TextBlock{Text: "first answer"}},
+		StopReason: llm.StopReasonEndTurn,
 	}); err != nil {
 		t.Fatalf("persistResponsesState() error = %v", err)
 	}
