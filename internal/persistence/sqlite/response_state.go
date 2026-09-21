@@ -66,6 +66,10 @@ func (s *Store) SaveResponse(ctx context.Context, id string, record responsestat
 	if status == "" {
 		status = "completed"
 	}
+	payload := record.Payload
+	if payload == nil {
+		payload = []byte{}
+	}
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO response_states(id, messages, continuable, payload, status, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?)
@@ -75,7 +79,7 @@ func (s *Store) SaveResponse(ctx context.Context, id string, record responsestat
 			payload = excluded.payload,
 			status = excluded.status,
 			expires_at = excluded.expires_at
-	`, id, encoded, continuable, record.Payload, status, expiresAt.Unix()); err != nil {
+	`, id, encoded, continuable, payload, status, expiresAt.Unix()); err != nil {
 		return fmt.Errorf("save response state %q: %w", id, err)
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM response_states WHERE expires_at <= ?`, time.Now().Unix()); err != nil {
