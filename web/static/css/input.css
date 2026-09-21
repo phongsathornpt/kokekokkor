@@ -1,100 +1,486 @@
 @import "tailwindcss";
 
+/* The build emits styles.css next to this file. Without this exclusion the
+   compiled output is scanned as a source, so previous builds re-seed classes
+   that no template uses any more. */
+@source not "./styles.css";
+
 @theme {
-  --color-brand-bg: #090a0f;
-  --color-brand-card: #12141a;
-  --color-brand-card-raised: #181b24;
-  --color-brand-card-hover: #1e222d;
-  --color-brand-border: #262933;
-  --color-brand-border-subtle: #1a1d25;
-  --color-brand-border-input: #353945;
-  --color-brand-accent: #6366f1;
-  --color-brand-accent-hover: #818cf8;
-  --color-brand-danger: #f43f5e;
-  --color-brand-ok: #10b981;
-  --color-brand-warning: #f59e0b;
-  --color-brand-openai: #10b981;
-  --color-brand-anthropic: #f97316;
-  --color-brand-gemini: #38bdf8;
+  /* Planes. Depth comes from surface steps, never from shadow.
+     Lightness ladder, perceptually even: well .118 < ground .149 < plane .182
+     < plane-2 .217 < rule .250 < rule-2 .315. */
+  --color-well: oklch(0.118 0.005 262);
+  --color-ground: oklch(0.149 0.005 264);
+  --color-plane: oklch(0.182 0.009 264);
+  --color-plane-2: oklch(0.217 0.011 261);
+
+  /* Hairlines. */
+  --color-rule: oklch(0.250 0.013 258);
+  --color-rule-2: oklch(0.315 0.017 256);
+
+  /* Ink. Ladder .936 / .775 / .625 / .460, steps within 0.02 of each other.
+     Every level clears WCAG AA against the plane it renders on. */
+  --color-ink: oklch(0.936 0.005 248);
+  --color-ink-2: oklch(0.775 0.017 251);
+  --color-ink-3: oklch(0.625 0.019 251);
+  --color-ink-disabled: oklch(0.548 0.014 251);
+
+  /* Signal. Reserved for the live path, primary action, and focus. */
+  --color-signal: oklch(0.735 0.112 210);
+  --color-signal-2: oklch(0.835 0.093 208);
+  --color-signal-ink: oklch(0.175 0.024 209);
+
+  /* Semantic status. ok and warn are the two marks that sit side by side, so
+     they are separated by lightness (.800 / .705) for grayscale and CVD.
+     bad never renders as a mark, only as text and borders. */
+  --color-ok: oklch(0.800 0.140 160);
+  --color-warn: oklch(0.705 0.132 76);
+  --color-bad: oklch(0.650 0.150 19);
+
+  /* Protocol identity, used only as a mark or a glyph stroke. One shared
+     lightness so the three read with equal weight; chroma sits at 85% of each
+     hue's own ceiling so they read with equal vividness. The band sits at 0.600
+     so no protocol mark can be mistaken for the accent (0.735) or a status role
+     once colour-blindness removes hue as a separator. */
+  --color-openai: oklch(0.600 0.090 185);
+  --color-anthropic: oklch(0.600 0.154 42);
+  --color-gemini: oklch(0.600 0.153 252);
+
+  /* Edges. Instruments have tight corners. */
+  --radius-flat: 2px;
+  --radius-panel: 3px;
+
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 @layer base {
   :root {
     color-scheme: dark;
   }
-  html {
-    scroll-behavior: smooth;
-  }
   body {
-    background-color: #090a0f;
-    color: #f3f4f6;
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 0.8125rem;
     line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
+  ::selection {
+    background: color-mix(in oklab, var(--color-signal) 30%, transparent);
+    color: var(--color-ink);
+  }
+
+  /* Labels are uppercase micro-caps everywhere. This is the instrument voice. */
   label {
     display: block;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #9ca3af;
-    margin-bottom: 0.25rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-ink-3);
+    margin-bottom: 0.375rem;
   }
-  input, select {
-    background-color: #0d0e12;
-    border: 1px solid #262933;
-    border-radius: 0.5rem;
-    padding: 0.375rem 0.625rem;
+
+  input,
+  select {
+    background-color: var(--color-well);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-flat);
+    padding: 0.3125rem 0.5rem;
     font-size: 0.75rem;
-    color: #ffffff;
+    font-family: inherit;
+    color: var(--color-ink);
     outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
+    transition: border-color 0.12s ease;
   }
-  input:focus, select:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3);
+  input::placeholder {
+    color: var(--color-ink-3);
+  }
+  input:hover,
+  select:hover {
+    border-color: var(--color-rule-2);
+  }
+  /* Never remove focus without a real replacement. */
+  input:focus-visible,
+  select:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 1px;
+  }
+  input:focus,
+  select:focus {
+    border-color: var(--color-signal);
+  }
+
+  /* iOS Safari zooms the entire viewport when a field under 16px takes focus,
+     which breaks the layout mid-entry. No utility class sets a field font-size,
+     so this base rule owns the property and wins the cascade without a fight. */
+  @media (max-width: 639px) {
+    input,
+    select {
+      font-size: 1rem;
+      padding: 0.625rem 0.75rem;
+    }
+  }
+
+  /* Low-vision preference: strengthen the hairlines so structural boundaries
+     reach 3:1 against the plane, and lift muted text. */
+  @media (prefers-contrast: more) {
+    :root {
+      --color-rule: oklch(0.500 0.013 258);
+      --color-rule-2: oklch(0.560 0.017 256);
+      --color-ink-3: oklch(0.720 0.020 251);
+    }
   }
 }
 
-/* Alert Banner for HTMX mutation feedback */
+@layer components {
+  /* ---- Type ---- */
+  .eyebrow {
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-ink-3);
+  }
+  .page-title {
+    font-size: 1.375rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--color-ink);
+  }
+  .page-lede {
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: var(--color-ink-2);
+    max-width: 68ch;
+  }
+  .ident {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Ledger: the scanning surface for providers and routes ---- */
+  .ledger-wrap {
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-panel);
+    background: var(--color-plane);
+    overflow-x: auto;
+  }
+  .ledger {
+    width: 100%;
+    min-width: 38rem;
+    border-collapse: collapse;
+  }
+  .ledger th {
+    text-align: start;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-ink-3);
+    white-space: nowrap;
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--color-rule-2);
+  }
+  .ledger td {
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--color-rule);
+    vertical-align: middle;
+  }
+  .ledger tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .ledger tbody tr:hover {
+    background-color: var(--color-plane-2);
+  }
+  /* Expanded configuration sits on the recessed plane so it reads as subordinate.
+     Collapsed it stays a slim strip; only an open disclosure earns the padding. */
+  .ledger tr.config-row:hover {
+    background-color: transparent;
+  }
+  .ledger tr.config-row td {
+    background-color: var(--color-well);
+    padding: 0 0.875rem;
+  }
+  .ledger tr.config-row td:has(details[open]) {
+    padding-bottom: 1.25rem;
+  }
+  .ledger tr.config-row summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4375rem 0;
+    font-size: 0.6875rem;
+    color: var(--color-ink-3);
+    transition: color 0.12s ease;
+  }
+  .ledger tr.config-row summary:hover {
+    color: var(--color-ink-2);
+  }
+  /* Disclosure affordance: rotates with open state, no extra icon needed.
+     Logical borders so the chevron mirrors when direction flips. */
+  .ledger tr.config-row summary::after {
+    content: "";
+    width: 0.3rem;
+    height: 0.3rem;
+    border-inline-end: 1px solid currentColor;
+    border-block-end: 1px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform 0.12s ease;
+  }
+  .ledger tr.config-row details[open] summary::after {
+    transform: rotate(-135deg);
+  }
+
+  /* ---- Disclosure ---- */
+  details > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* ---- Buttons. One system, one size. ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    min-height: 28px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-flat);
+    font-family: inherit;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  .btn-primary {
+    background-color: var(--color-signal);
+    border-color: var(--color-signal);
+    color: var(--color-signal-ink);
+    font-weight: 600;
+  }
+  .btn-primary:hover {
+    background-color: var(--color-signal-2);
+    border-color: var(--color-signal-2);
+  }
+  .btn-quiet {
+    background-color: var(--color-plane-2);
+    border-color: var(--color-rule-2);
+    color: var(--color-ink-2);
+  }
+  .btn-quiet:hover {
+    color: var(--color-ink);
+    border-color: var(--color-ink-3);
+  }
+  .btn-danger {
+    background-color: transparent;
+    border-color: color-mix(in oklab, var(--color-bad) 45%, transparent);
+    color: var(--color-bad);
+  }
+  .btn-danger:hover {
+    background-color: color-mix(in oklab, var(--color-bad) 14%, transparent);
+  }
+  .btn-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--color-signal-2);
+    cursor: pointer;
+    transition: color 0.12s ease;
+  }
+  .btn-link:hover {
+    color: var(--color-signal);
+    text-decoration: underline;
+  }
+  .btn-link-danger {
+    display: inline-flex;
+    align-items: center;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--color-bad);
+    cursor: pointer;
+    transition: color 0.12s ease;
+  }
+  .btn-link-danger:hover {
+    text-decoration: underline;
+  }
+
+  /* Disabled. Reads as unavailable without pretending to be muted text.
+     Set after the variants so it overrides their fills. */
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    background-color: transparent;
+    border-color: var(--color-rule);
+    color: var(--color-ink-disabled);
+    cursor: not-allowed;
+  }
+  input:disabled,
+  select:disabled {
+    background-color: var(--color-ground);
+    border-color: var(--color-rule);
+    color: var(--color-ink-disabled);
+    cursor: not-allowed;
+  }
+
+  /* Touch input gets a 44px hit area while the visual keeps instrument density.
+     Pointer input keeps the compact sizing, so desktop is untouched. */
+  @media (any-pointer: coarse) {
+    .btn,
+    .btn-link,
+    .btn-link-danger,
+    .ledger tr.config-row summary {
+      position: relative;
+    }
+    .btn::before,
+    .btn-link::before,
+    .btn-link-danger::before,
+    .ledger tr.config-row summary::before {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      top: 50%;
+      height: 44px;
+      transform: translateY(-50%);
+    }
+  }
+
+  /* Pending. htmx marks the in-flight form, so the control acknowledges the
+     click and cannot be double-fired. */
+  form.htmx-request {
+    cursor: progress;
+  }
+  form.htmx-request .btn,
+  form.htmx-request .btn-link,
+  form.htmx-request .btn-link-danger {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  /* ---- Tag: a machine literal ---- */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.375rem;
+    border: 1px solid var(--color-rule-2);
+    border-radius: var(--radius-flat);
+    background-color: var(--color-plane-2);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-ink-2);
+    white-space: nowrap;
+  }
+
+  /* ---- Hops: the ordered fallback rail ---- */
+  .hops {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .hops > li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  .hops > li + li::before {
+    content: "";
+    width: 0.75rem;
+    height: 1px;
+    background-color: var(--color-rule-2);
+  }
+  .hop {
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.05em;
+    color: var(--color-ink-3);
+  }
+}
+
+/* HTMX mutation feedback. Retargeted by HX-Retarget: #alert-banner. */
 #alert-banner:empty {
   display: none;
 }
 #alert-banner:not(:empty) {
   display: block;
-  padding: 12px 16px;
-  background: rgba(244, 63, 94, 0.15);
-  border: 1px solid rgba(244, 63, 94, 0.4);
-  border-radius: 10px;
-  color: #fca5a5;
-  font-size: 13.5px;
+  margin-bottom: 1.5rem;
+  padding: 0.625rem 0.875rem;
+  background-color: color-mix(in oklab, var(--color-bad) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-bad) 40%, transparent);
+  border-inline-start-width: 2px;
+  border-radius: var(--radius-flat);
+  color: var(--color-bad);
+  font-size: 0.75rem;
   font-weight: 500;
-  margin-bottom: 24px;
 }
 
-/* Custom glowing pulse dot */
-@keyframes pulse-glow {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(1.15);
-  }
+.error {
+  background-color: color-mix(in oklab, var(--color-bad) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-bad) 40%, transparent);
+  border-inline-start-width: 2px;
+  border-radius: var(--radius-flat);
+  color: var(--color-bad);
+  font-size: 0.75rem;
 }
 
-.pulse-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background-color: #10b981;
-  box-shadow: 0 0 8px #10b981;
-  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+/* Modal Dialog */
+dialog.modal-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  background: transparent;
+  border: none;
+  padding: 1rem;
+  max-width: 32rem;
+  width: calc(100% - 2rem);
+  color: var(--color-ink);
+  z-index: 100;
+}
+dialog.modal-dialog::backdrop {
+  background-color: oklch(0.05 0.005 264 / 0.75);
+  backdrop-filter: blur(4px);
+}
+dialog.modal-dialog:not([open]) {
+  display: none;
+}
+dialog.modal-dialog[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Form Controls and Custom Scrollbars */
 select option {
-  background-color: #12141a;
-  color: #f3f4f6;
+  background-color: var(--color-plane);
+  color: var(--color-ink);
 }
 
 ::-webkit-scrollbar {
@@ -105,9 +491,17 @@ select option {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #262933;
+  background: var(--color-rule-2);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #353945;
+  background: var(--color-ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

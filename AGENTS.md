@@ -94,6 +94,9 @@ When implementing features or refactoring, strictly maintain the following invar
 - All SQLite access runs through `modernc.org/sqlite`. Keep CGO disabled.
 - Concurrency must pass `go test -race ./...` without data races.
 
+### 3.5. Admin UI & Navigation
+- **Sidebar-Only Menu**: The admin interface navigation menu must use a sidebar only. Never introduce or switch to top navigation bars, top rails, or header-based menus. All primary navigation links (Overview, Providers, Protocol Defaults, Model Routes) and dashboard menu controls must reside exclusively in the sidebar.
+
 ---
 
 ## 4. Development & Verification Workflow
@@ -132,3 +135,4 @@ go test ./internal/protocol/sse -run='^$' -fuzz='^FuzzDecode$' -fuzztime=2s
 - **Structured Logging**: Use `log/slog` for structured logging. Never use `fmt.Println` or standard `log` for runtime application logs.
 - **Error Wrapping**: Always wrap errors with `%w` where contextual information aids debugging (`fmt.Errorf("do something: %w", err)`). Use sentinel errors (`ErrUnsupported`, `ErrNoRoute`) with `errors.Is`.
 - **Table-Driven Tests**: Write table-driven unit tests for all decoding, encoding, and compatibility checking logic. Maintain coverage in `compatibility_matrix_test.go` when adding cross-protocol mappings.
+- **Admin UI Menu**: The navigation menu must use a sidebar layout only; never implement top navigation bars or horizontal header menus.

@@ -41,6 +41,7 @@ type fakeCredentials struct {
 	values    map[string]string
 	editable  bool
 	forgotten string
+	failSet   bool
 }
 
 func (f *fakeCredentials) HasAPIKey(providerID string) bool { return f.values[providerID] != "" }
@@ -52,6 +53,9 @@ func (f *fakeCredentials) ForgetProvider(providerID string) {
 func (f *fakeCredentials) SetAPIKey(_ context.Context, providerID, value string) error {
 	if !f.editable {
 		return errors.New("read only")
+	}
+	if f.failSet {
+		return errors.New("simulated keyring encryption failure")
 	}
 	f.values[providerID] = value
 	return nil
@@ -264,6 +268,73 @@ func TestAdminProviderCRUDAndCredentialForget(t *testing.T) {
 	}
 }
 
+func TestAdminCreateProviderWithAPIKey(t *testing.T) {
+	catalog := &fakeCatalog{snapshot: domaincatalog.Snapshot{
+		Providers: []domaincatalog.Provider{},
+		Defaults:  map[provider.Protocol]string{},
+		Routes:    map[string][]domaincatalog.RouteTarget{},
+	}}
+	credentials := &fakeCredentials{values: map[string]string{}, editable: true}
+	handler, err := NewManageable(catalog.snapshot, catalog, credentials, nil, nil)
+	if err != nil {
+		t.Fatalf("NewManageable() error = %v", err)
+	}
+
+	form := url.Values{
+		"provider_id": {"openai-with-key"},
+		"protocol":    {"openai"},
+		"base_url":    {"https://api.openai.com/v1"},
+		"enabled":     {"true"},
+		"api_key":     {"sk-secret-token-12345"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/admin/providers", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("create with api_key status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(catalog.snapshot.Providers) != 1 {
+		t.Fatalf("provider count = %d, want 1", len(catalog.snapshot.Providers))
+	}
+	if credentials.values["openai-with-key"] != "sk-secret-token-12345" {
+		t.Fatalf("credential key = %q, want %q", credentials.values["openai-with-key"], "sk-secret-token-12345")
+	}
+}
+
+func TestAdminCreateProviderAPIKeyFailureRollsBack(t *testing.T) {
+	catalog := &fakeCatalog{snapshot: domaincatalog.Snapshot{
+		Providers: []domaincatalog.Provider{},
+		Defaults:  map[provider.Protocol]string{},
+		Routes:    map[string][]domaincatalog.RouteTarget{},
+	}}
+	credentials := &fakeCredentials{values: map[string]string{}, editable: true, failSet: true}
+	handler, err := NewManageable(catalog.snapshot, catalog, credentials, nil, nil)
+	if err != nil {
+		t.Fatalf("NewManageable() error = %v", err)
+	}
+
+	form := url.Values{
+		"provider_id": {"openai-fail-key"},
+		"protocol":    {"openai"},
+		"base_url":    {"https://api.openai.com/v1"},
+		"enabled":     {"true"},
+		"api_key":     {"sk-secret-token-12345"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/admin/providers", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if len(catalog.snapshot.Providers) != 0 {
+		t.Fatalf("provider count = %d, want 0 after rollback", len(catalog.snapshot.Providers))
+	}
+}
+
 func TestAdminProviderRejectsInvalidProtocol(t *testing.T) {
 	catalog := &fakeCatalog{snapshot: domaincatalog.Snapshot{Defaults: map[provider.Protocol]string{}, Routes: map[string][]domaincatalog.RouteTarget{}}}
 	handler, err := NewManageable(catalog.snapshot, catalog, &fakeCredentials{values: map[string]string{}}, nil, nil)
@@ -321,8 +392,8 @@ func TestAdminRendersAccessibleFormControlsAndAlertBanner(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`id="alert-banner"`,
-		`Upstream Providers`,
-		`Active Model Routes`,
+		`Upstream providers`,
+		`Active routes`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("overview body missing %q", want)
@@ -340,7 +411,7 @@ func TestAdminRendersAccessibleFormControlsAndAlertBanner(t *testing.T) {
 	for _, want := range []string{
 		`id="alert-banner"`,
 		`<label for="new-protocol">Protocol</label>`,
-		`<select id="new-protocol" name="protocol" required>`,
+		`id="new-protocol" name="protocol" required`,
 		`<label for="new-base-url">Base URL</label>`,
 		`hx-post="/admin/providers/toggle"`,
 	} {
@@ -441,7 +512,7 @@ func TestAdminDedicatedPageRoutes(t *testing.T) {
 			if !strings.Contains(body, tc.wantTitle) {
 				t.Errorf("GET %s missing title %q", tc.path, tc.wantTitle)
 			}
-			if !strings.Contains(body, `hx-boost="true"`) {
+			if !strings.Contains(body, `hx-boost:inherited="true"`) {
 				t.Errorf("GET %s missing hx-boost", tc.path)
 			}
 		})
