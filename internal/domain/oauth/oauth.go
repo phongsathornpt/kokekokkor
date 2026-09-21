@@ -64,6 +64,7 @@ type DeviceAuthorization struct {
 type PendingAuthorization struct {
 	ProviderID   string
 	State        string
+	BindingHash  string
 	CodeVerifier string
 	RedirectURI  string
 	CreatedAt    time.Time

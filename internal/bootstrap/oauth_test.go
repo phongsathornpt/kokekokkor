@@ -121,7 +121,7 @@ func TestResolveOAuthRuntimeCodexProfilesJSON(t *testing.T) {
 	}
 }
 
-func TestResolveOAuthRuntimeCodexRejectsUnconfiguredProvider(t *testing.T) {
+func TestResolveOAuthRuntimeCodexAllowsBuiltinPresetWithoutCatalogEntry(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
 	t.Setenv("KOKEKOKKOR_CREDENTIAL_KEYS_JSON", `{"v1":"`+key+`"}`)
 	t.Setenv("KOKEKOKKOR_CREDENTIAL_ACTIVE_KEY_VERSION", "v1")
@@ -140,9 +140,12 @@ func TestResolveOAuthRuntimeCodexRejectsUnconfiguredProvider(t *testing.T) {
 	// Snapshot has no providers configured.
 	snapshot := domaincatalog.Snapshot{}
 
-	_, err = resolveOAuthRuntime(ctx, config.Config{}, snapshot, store, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil {
-		t.Fatal("resolveOAuthRuntime() error = nil, want unconfigured provider error")
+	runtime, err := resolveOAuthRuntime(ctx, config.Config{}, snapshot, store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("resolveOAuthRuntime() error = %v", err)
+	}
+	if len(runtime.providerIDs) != 1 || runtime.providerIDs[0] != "openai" {
+		t.Fatalf("providerIDs = %#v, want [\"openai\"]", runtime.providerIDs)
 	}
 }
 

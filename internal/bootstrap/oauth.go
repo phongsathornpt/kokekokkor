@@ -71,7 +71,8 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 	providerIDs := make([]string, 0, len(oauthConfig.Profiles)+4)
 	addProfile := func(profile domainoauth.Provider) error {
 		if store != nil {
-			if _, ok := configured[profile.ID]; !ok {
+			_, configuredProvider := configured[profile.ID]
+			if !configuredProvider && !builtinOAuthProviderID(profile.ID) {
 				return fmt.Errorf("OAuth profile %q does not match a configured provider", profile.ID)
 			}
 		}
@@ -193,6 +194,15 @@ func resolveOAuthRuntime(ctx context.Context, cfg config.Config, snapshot domain
 		profiles:     profiles,
 		providerIDs:  providerIDs,
 	}, nil
+}
+
+func builtinOAuthProviderID(providerID string) bool {
+	switch providerID {
+	case "openai", "anthropic", "gemini", "antigravity":
+		return true
+	default:
+		return false
+	}
 }
 
 func defaultAnthropicProviderID(cfg config.Config, snapshot domaincatalog.Snapshot) string {

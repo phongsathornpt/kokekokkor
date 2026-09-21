@@ -32,6 +32,10 @@ type TokenRepository interface {
 	Get(context.Context, string) (domainoauth.TokenSet, error)
 }
 
+type TokenDeleter interface {
+	Delete(context.Context, string) error
+}
+
 type ExchangeRequest struct {
 	Code         string
 	CodeVerifier string

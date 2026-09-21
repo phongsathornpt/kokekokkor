@@ -24,7 +24,7 @@ type fakeService struct {
 	completeErr   error
 }
 
-func (f *fakeService) Begin(_ context.Context, _ domainoauth.Provider, redirectURI string) (domainoauth.Authorization, error) {
+func (f *fakeService) Begin(_ context.Context, _ domainoauth.Provider, redirectURI, _ string) (domainoauth.Authorization, error) {
 	f.beginURI = redirectURI
 	if f.beginErr != nil {
 		return domainoauth.Authorization{}, f.beginErr
@@ -32,7 +32,7 @@ func (f *fakeService) Begin(_ context.Context, _ domainoauth.Provider, redirectU
 	return domainoauth.Authorization{URL: f.beginRedirect}, nil
 }
 
-func (f *fakeService) Complete(_ context.Context, _ domainoauth.Provider, state, code, redirectURI string) (domainoauth.TokenSet, error) {
+func (f *fakeService) Complete(_ context.Context, _ domainoauth.Provider, state, code, redirectURI, _ string) (domainoauth.TokenSet, error) {
 	f.completeState = state
 	f.completeCode = code
 	f.completeURI = redirectURI
@@ -41,6 +41,8 @@ func (f *fakeService) Complete(_ context.Context, _ domainoauth.Provider, state,
 	}
 	return domainoauth.TokenSet{AccessToken: "must-not-leak"}, nil
 }
+
+func (f *fakeService) Delete(context.Context, string) error { return nil }
 
 func TestHandlerStartAndCallback(t *testing.T) {
 	service := &fakeService{beginRedirect: "https://accounts.example.com/authorize?state=abc"}
@@ -64,7 +66,9 @@ func TestHandlerStartAndCallback(t *testing.T) {
 	}
 
 	callback := httptest.NewRecorder()
-	mux.ServeHTTP(callback, httptest.NewRequest(http.MethodGet, "/oauth/gemini/callback?state=state-1&code=code-1", nil))
+	callbackRequest := httptest.NewRequest(http.MethodGet, "/oauth/gemini/callback?state=state-1&code=code-1", nil)
+	callbackRequest.AddCookie(start.Result().Cookies()[0])
+	mux.ServeHTTP(callback, callbackRequest)
 	if callback.Code != http.StatusOK {
 		t.Fatalf("callback status=%d body=%s", callback.Code, callback.Body.String())
 	}
@@ -73,6 +77,28 @@ func TestHandlerStartAndCallback(t *testing.T) {
 	}
 	if strings.Contains(callback.Body.String(), "must-not-leak") {
 		t.Fatalf("callback leaked token material: %s", callback.Body.String())
+	}
+}
+
+func TestHandlerRejectsCallbackWithoutFlowCookie(t *testing.T) {
+	handler, err := New(&fakeService{}, map[string]domainoauth.Provider{
+		"gemini": {
+			ID:               "gemini",
+			AuthorizationURL: "https://accounts.example.com/authorize",
+			TokenURL:         "https://accounts.example.com/token",
+			ClientID:         "client-id",
+		},
+	}, "https://gateway.example.com")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/oauth/gemini/callback?state=state&code=code", nil)
+	response := httptest.NewRecorder()
+	mux := http.NewServeMux()
+	mux.Handle("GET /oauth/{provider}/callback", handler)
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
 	}
 }
 
@@ -115,6 +141,9 @@ func TestHandlerRedactsServiceErrorsAndLogsDetails(t *testing.T) {
 			response := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			request.Header.Set("X-Request-ID", "req-123")
+			if tc.name == "callback" {
+				request.AddCookie(&http.Cookie{Name: oauthFlowCookie, Value: "test-binding"})
+			}
 			mux.ServeHTTP(response, request)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d", response.Code)

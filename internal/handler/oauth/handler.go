@@ -2,30 +2,39 @@ package oauthhttp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
 )
 
 type Service interface {
-	Begin(context.Context, domainoauth.Provider, string) (domainoauth.Authorization, error)
-	Complete(context.Context, domainoauth.Provider, string, string, string) (domainoauth.TokenSet, error)
+	Begin(context.Context, domainoauth.Provider, string, string) (domainoauth.Authorization, error)
+	Complete(context.Context, domainoauth.Provider, string, string, string, string) (domainoauth.TokenSet, error)
+	Delete(context.Context, string) error
 }
+
+const (
+	oauthFlowCookie           = "kokekokkor_oauth_flow"
+	defaultOAuthFlowCookieTTL = 10 * time.Minute
+)
 
 type Handler struct {
 	service       Service
 	providers     map[string]domainoauth.Provider
 	publicBaseURL string
 	logger        *slog.Logger
-	onSuccess     func(context.Context, string)
+	onSuccess     func(context.Context, string) error
 }
 
-func (h *Handler) SetOnSuccess(fn func(context.Context, string)) {
+func (h *Handler) SetOnSuccess(fn func(context.Context, string) error) {
 	h.onSuccess = fn
 }
 
@@ -73,28 +82,49 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) start(w http.ResponseWriter, r *http.Request, providerID string, provider domainoauth.Provider) {
-	authorization, err := h.service.Begin(r.Context(), provider, h.callbackURL(providerID))
+	binding, err := randomBinding()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "OAuth authorization could not be started")
+		return
+	}
+	authorization, err := h.service.Begin(r.Context(), provider, h.callbackURL(providerID), binding)
 	if err != nil {
 		h.logFailure(r, providerID, "start", err)
 		writeError(w, http.StatusBadRequest, "OAuth authorization could not be started")
 		return
 	}
+	h.setFlowCookie(w, r, binding)
 	http.Redirect(w, r, authorization.URL, http.StatusFound)
 }
 
 func (h *Handler) callback(w http.ResponseWriter, r *http.Request, providerID string, provider domainoauth.Provider) {
+	binding, err := r.Cookie(oauthFlowCookie)
+	if err != nil || binding.Value == "" {
+		writeError(w, http.StatusBadRequest, "OAuth authorization flow is missing or expired")
+		return
+	}
 	if r.URL.Query().Get("error") != "" {
+		h.clearFlowCookie(w, r)
 		writeError(w, http.StatusBadRequest, "OAuth provider rejected the authorization request")
 		return
 	}
-	_, err := h.service.Complete(r.Context(), provider, r.URL.Query().Get("state"), r.URL.Query().Get("code"), h.callbackURL(providerID))
+	_, err = h.service.Complete(r.Context(), provider, r.URL.Query().Get("state"), r.URL.Query().Get("code"), h.callbackURL(providerID), binding.Value)
 	if err != nil {
+		h.clearFlowCookie(w, r)
 		h.logFailure(r, providerID, "callback", err)
 		writeError(w, http.StatusBadRequest, "OAuth authorization could not be completed")
 		return
 	}
+	h.clearFlowCookie(w, r)
 	if h.onSuccess != nil {
-		h.onSuccess(r.Context(), providerID)
+		if err := h.onSuccess(r.Context(), providerID); err != nil {
+			if deleteErr := h.service.Delete(r.Context(), providerID); deleteErr != nil {
+				h.logFailure(r, providerID, "rollback", deleteErr)
+			}
+			h.logFailure(r, providerID, "save", err)
+			writeError(w, http.StatusBadRequest, "OAuth provider could not be saved")
+			return
+		}
 	}
 	if strings.Contains(r.Header.Get("Accept"), "text/html") {
 		http.Redirect(w, r, "/admin/providers", http.StatusFound)
@@ -102,6 +132,38 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request, providerID st
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "connected", "provider": providerID})
+}
+
+func randomBinding() (string, error) {
+	value := make([]byte, 32)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate OAuth browser binding: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func (h *Handler) setFlowCookie(w http.ResponseWriter, r *http.Request, binding string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthFlowCookie,
+		Value:    binding,
+		Path:     "/oauth",
+		HttpOnly: true,
+		Secure:   r.TLS != nil || strings.HasPrefix(h.publicBaseURL, "https://"),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(defaultOAuthFlowCookieTTL.Seconds()),
+	})
+}
+
+func (h *Handler) clearFlowCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthFlowCookie,
+		Value:    "",
+		Path:     "/oauth",
+		HttpOnly: true,
+		Secure:   r.TLS != nil || strings.HasPrefix(h.publicBaseURL, "https://"),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
 }
 
 func (h *Handler) logFailure(r *http.Request, providerID, operation string, err error) {

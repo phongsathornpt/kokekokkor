@@ -556,7 +556,14 @@ func (f *fakeAdminOAuthService) ImportToken(context.Context, string, domainoauth
 }
 
 func TestAdminOAuthDeviceCodeAndPoll(t *testing.T) {
-	catalog := &fakeCatalog{snapshot: testSnapshot()}
+	snapshot := testSnapshot()
+	snapshot.Providers = append(snapshot.Providers, domaincatalog.Provider{
+		ID:       "github",
+		Protocol: provider.ProtocolOpenAI,
+		BaseURL:  "https://api.github.com",
+		Enabled:  true,
+	})
+	catalog := &fakeCatalog{snapshot: snapshot}
 	tokens := &fakeTokens{values: make(map[string]domainoauth.TokenSet)}
 	handler, err := NewManageable(catalog.snapshot, catalog, &fakeCredentials{values: map[string]string{}}, tokens, []string{"github"})
 	if err != nil {
@@ -588,9 +595,19 @@ func TestAdminOAuthDeviceCodeAndPoll(t *testing.T) {
 	if !strings.Contains(body, "WDJB-4321") || !strings.Contains(body, "https://github.com/login/device") {
 		t.Fatalf("body missing expected user code: %s", body)
 	}
+	if strings.Contains(body, "dev-code-123") {
+		t.Fatalf("device code leaked into polling markup: %s", body)
+	}
 
 	// 2. Poll device code
-	req = httptest.NewRequest(http.MethodGet, "/admin/oauth/github/poll?device_code=dev-code-123", nil)
+	flowID := ""
+	for id := range handler.deviceFlows {
+		flowID = id
+	}
+	if flowID == "" {
+		t.Fatal("device flow handle was not stored")
+	}
+	req = httptest.NewRequest(http.MethodPost, "/admin/oauth/github/poll?flow_id="+url.QueryEscape(flowID), nil)
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {

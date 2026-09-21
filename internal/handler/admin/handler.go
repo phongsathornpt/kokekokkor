@@ -2,6 +2,8 @@ package adminhttp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	domaincatalog "github.com/phongsathornpt/kokekokkor/internal/domain/catalog"
 	domainoauth "github.com/phongsathornpt/kokekokkor/internal/domain/oauth"
@@ -57,6 +61,12 @@ type ProbingService interface {
 	TestModel(context.Context, provider.Target, string) probing.TestResult
 }
 
+type deviceFlow struct {
+	ProviderID string
+	DeviceCode string
+	ExpiresAt  time.Time
+}
+
 type staticCredentialStatus map[string]bool
 
 func (s staticCredentialStatus) HasAPIKey(providerID string) bool { return s[providerID] }
@@ -78,6 +88,8 @@ type Handler struct {
 	oauthProviders map[string]domainoauth.Provider
 	oauthService   OAuthService
 	prober         ProbingService
+	deviceMu       sync.Mutex
+	deviceFlows    map[string]deviceFlow
 }
 
 func New(snapshot domaincatalog.Snapshot, tokens TokenStore, oauthProviderIDs []string, apiKeys map[string]bool) (*Handler, error) {
@@ -116,7 +128,14 @@ func newHandler(snapshot domaincatalog.Snapshot, catalog CatalogEditor, credenti
 	if credentials == nil {
 		credentials = staticCredentialStatus(nil)
 	}
-	return &Handler{snapshot: snapshot, catalog: catalog, credentials: credentials, tokens: tokens, oauthProviders: providers}, nil
+	return &Handler{
+		snapshot:       snapshot,
+		catalog:        catalog,
+		credentials:    credentials,
+		oauthProviders: providers,
+		deviceFlows:    make(map[string]deviceFlow),
+		tokens:         tokens,
+	}, nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +152,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.disconnect(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/device-code"):
 		h.deviceCode(w, r)
-	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/poll"):
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/poll"):
 		h.pollDeviceCode(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/admin/oauth/") && strings.HasSuffix(r.URL.Path, "/exchange"):
 		h.manualExchange(w, r)
@@ -251,6 +270,12 @@ func (h *Handler) deviceCode(w http.ResponseWriter, r *http.Request) {
 		if interval <= 0 {
 			interval = 5
 		}
+		flowID, err := h.storeDeviceFlow(providerID, deviceAuth.DeviceCode, deviceAuth.ExpiresAt)
+		if err != nil {
+			mutationError(w, http.StatusInternalServerError, "device authorization could not be stored")
+			return
+		}
+		csrf := AdminCSRFToken(r.Context())
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<div class="flex flex-col items-center gap-3 text-center py-2">
 			<div class="text-[11px] text-ink-3">Enter this code on the verification page:</div>
@@ -258,11 +283,11 @@ func (h *Handler) deviceCode(w http.ResponseWriter, r *http.Request) {
 			<a href="%s" target="_blank" rel="noopener noreferrer" class="btn btn-primary mt-1">
 				Open Verification Page
 			</a>
-			<div class="flex items-center gap-2 text-xs text-ink-3 mt-2" hx-get="/admin/oauth/%s/poll?device_code=%s" hx-trigger="every %ds" hx-swap="outerHTML">
+			<div class="flex items-center gap-2 text-xs text-ink-3 mt-2" hx-post="/admin/oauth/%s/poll?flow_id=%s" hx-headers='{"X-CSRF-Token":"%s"}' hx-trigger="every %ds" hx-swap="outerHTML">
 				<span class="w-1.5 h-1.5 rounded-full bg-signal animate-ping"></span>
 				Waiting for authorization...
 			</div>
-		</div>`, html.EscapeString(deviceAuth.UserCode), html.EscapeString(verifyURL), url.PathEscape(providerID), url.QueryEscape(deviceAuth.DeviceCode), interval)
+		</div>`, html.EscapeString(deviceAuth.UserCode), html.EscapeString(verifyURL), url.PathEscape(providerID), url.QueryEscape(flowID), html.EscapeString(csrf), interval)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -277,12 +302,13 @@ func (h *Handler) pollDeviceCode(w http.ResponseWriter, r *http.Request) {
 		mutationError(w, http.StatusNotFound, fmt.Sprintf("OAuth not available for %s", providerID))
 		return
 	}
-	deviceCode := r.URL.Query().Get("device_code")
-	if deviceCode == "" {
-		mutationError(w, http.StatusBadRequest, "device_code is required")
+	flowID := r.URL.Query().Get("flow_id")
+	flow, ok := h.loadDeviceFlow(flowID, providerID)
+	if !ok {
+		mutationError(w, http.StatusBadRequest, "device authorization flow is missing or expired")
 		return
 	}
-	_, err := h.oauthService.DevicePoll(r.Context(), provider, deviceCode)
+	_, err := h.oauthService.DevicePoll(r.Context(), provider, flow.DeviceCode)
 	if err != nil {
 		switch {
 		case errors.Is(err, appoauth.ErrAuthorizationPending), errors.Is(err, appoauth.ErrSlowDown):
@@ -291,18 +317,58 @@ func (h *Handler) pollDeviceCode(w http.ResponseWriter, r *http.Request) {
 				interval = 10
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprintf(w, `<div class="flex items-center gap-2 text-xs text-ink-3 mt-2" hx-get="/admin/oauth/%s/poll?device_code=%s" hx-trigger="every %ds" hx-swap="outerHTML">
+			csrf := AdminCSRFToken(r.Context())
+			fmt.Fprintf(w, `<div class="flex items-center gap-2 text-xs text-ink-3 mt-2" hx-post="/admin/oauth/%s/poll?flow_id=%s" hx-headers='{"X-CSRF-Token":"%s"}' hx-trigger="every %ds" hx-swap="outerHTML">
 				<span class="w-1.5 h-1.5 rounded-full bg-signal animate-ping"></span>
 				Waiting for authorization...
-			</div>`, url.PathEscape(providerID), url.QueryEscape(deviceCode), interval)
+			</div>`, url.PathEscape(providerID), url.QueryEscape(flowID), html.EscapeString(csrf), interval)
 			return
 		default:
 			mutationError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
-	h.ensurePresetProvider(r.Context(), providerID)
+	h.deleteDeviceFlow(flowID)
+	if err := h.ensurePresetProvider(r.Context(), providerID); err != nil {
+		_ = h.tokens.Delete(r.Context(), providerID)
+		mutationError(w, http.StatusInternalServerError, "provider could not be saved")
+		return
+	}
 	mutationOK(w)
+}
+
+func (h *Handler) storeDeviceFlow(providerID, deviceCode string, expiresAt time.Time) (string, error) {
+	if expiresAt.IsZero() {
+		expiresAt = time.Now().UTC().Add(15 * time.Minute)
+	}
+	value := make([]byte, 24)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate device flow handle: %w", err)
+	}
+	flowID := base64.RawURLEncoding.EncodeToString(value)
+	h.deviceMu.Lock()
+	h.deviceFlows[flowID] = deviceFlow{ProviderID: providerID, DeviceCode: deviceCode, ExpiresAt: expiresAt}
+	h.deviceMu.Unlock()
+	return flowID, nil
+}
+
+func (h *Handler) loadDeviceFlow(flowID, providerID string) (deviceFlow, bool) {
+	h.deviceMu.Lock()
+	defer h.deviceMu.Unlock()
+	flow, ok := h.deviceFlows[flowID]
+	if !ok || flow.ProviderID != providerID || !flow.ExpiresAt.After(time.Now().UTC()) {
+		if ok {
+			delete(h.deviceFlows, flowID)
+		}
+		return deviceFlow{}, false
+	}
+	return flow, true
+}
+
+func (h *Handler) deleteDeviceFlow(flowID string) {
+	h.deviceMu.Lock()
+	delete(h.deviceFlows, flowID)
+	h.deviceMu.Unlock()
 }
 
 func (h *Handler) manualExchange(w http.ResponseWriter, r *http.Request) {
@@ -327,7 +393,11 @@ func (h *Handler) manualExchange(w http.ResponseWriter, r *http.Request) {
 			mutationError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		h.ensurePresetProvider(r.Context(), providerID)
+		if err := h.ensurePresetProvider(r.Context(), providerID); err != nil {
+			_ = h.tokens.Delete(r.Context(), providerID)
+			mutationError(w, http.StatusInternalServerError, "provider could not be saved")
+			return
+		}
 		mutationOK(w)
 		return
 	}
@@ -353,7 +423,11 @@ func (h *Handler) manualExchange(w http.ResponseWriter, r *http.Request) {
 		mutationError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.ensurePresetProvider(r.Context(), providerID)
+	if err := h.ensurePresetProvider(r.Context(), providerID); err != nil {
+		_ = h.tokens.Delete(r.Context(), providerID)
+		mutationError(w, http.StatusInternalServerError, "provider could not be saved")
+		return
+	}
 	mutationOK(w)
 }
 
@@ -388,34 +462,41 @@ func (h *Handler) importToken(w http.ResponseWriter, r *http.Request) {
 		mutationError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.ensurePresetProvider(r.Context(), providerID)
+	if err := h.ensurePresetProvider(r.Context(), providerID); err != nil {
+		_ = h.tokens.Delete(r.Context(), providerID)
+		mutationError(w, http.StatusInternalServerError, "provider could not be saved")
+		return
+	}
 	mutationOK(w)
 }
 
-func (h *Handler) ensurePresetProvider(ctx context.Context, providerID string) {
+func (h *Handler) ensurePresetProvider(ctx context.Context, providerID string) error {
 	if h.catalog == nil {
-		return
+		return nil
 	}
 	snapshot, err := h.catalog.Load(ctx)
 	if err != nil {
-		return
+		return fmt.Errorf("load provider catalog: %w", err)
 	}
 	for _, p := range snapshot.Providers {
 		if p.ID == providerID {
-			return
+			return nil
 		}
 	}
 	for _, preset := range web.DefaultProviderPresets() {
 		if preset.ID == providerID {
-			_ = h.catalog.CreateProvider(ctx, domaincatalog.Provider{
+			if err := h.catalog.CreateProvider(ctx, domaincatalog.Provider{
 				ID:       preset.ID,
 				Protocol: provider.Protocol(preset.Protocol),
 				BaseURL:  preset.BaseURL,
 				Enabled:  true,
-			})
-			return
+			}); err != nil {
+				return fmt.Errorf("create provider %q: %w", providerID, err)
+			}
+			return nil
 		}
 	}
+	return fmt.Errorf("OAuth provider %q has no catalog preset", providerID)
 }
 
 func (h *Handler) createProvider(w http.ResponseWriter, r *http.Request) {

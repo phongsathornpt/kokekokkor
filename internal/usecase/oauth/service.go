@@ -2,6 +2,8 @@ package oauth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"strings"
@@ -30,12 +32,15 @@ func NewService(states StateRepository, exchanger Exchanger, tokens TokenReposit
 	}
 }
 
-func (s *Service) Begin(ctx context.Context, provider domainoauth.Provider, redirectURI string) (domainoauth.Authorization, error) {
+func (s *Service) Begin(ctx context.Context, provider domainoauth.Provider, redirectURI, binding string) (domainoauth.Authorization, error) {
 	if err := provider.Validate(); err != nil {
 		return domainoauth.Authorization{}, err
 	}
 	if err := validateRedirectURI(redirectURI); err != nil {
 		return domainoauth.Authorization{}, err
+	}
+	if strings.TrimSpace(binding) == "" {
+		return domainoauth.Authorization{}, fmt.Errorf("OAuth browser binding must not be empty")
 	}
 	for key := range provider.AuthorizationParams {
 		if isReservedAuthorizationParam(key) {
@@ -57,6 +62,7 @@ func (s *Service) Begin(ctx context.Context, provider domainoauth.Provider, redi
 	pending := domainoauth.PendingAuthorization{
 		ProviderID:   provider.ID,
 		State:        state,
+		BindingHash:  hashBinding(binding),
 		CodeVerifier: verifier,
 		RedirectURI:  redirectURI,
 		CreatedAt:    now,
@@ -87,7 +93,7 @@ func (s *Service) Begin(ctx context.Context, provider domainoauth.Provider, redi
 	return domainoauth.Authorization{URL: authorizationURL.String(), ExpiresAt: pending.ExpiresAt}, nil
 }
 
-func (s *Service) Complete(ctx context.Context, provider domainoauth.Provider, state, code, redirectURI string) (domainoauth.TokenSet, error) {
+func (s *Service) Complete(ctx context.Context, provider domainoauth.Provider, state, code, redirectURI, binding string) (domainoauth.TokenSet, error) {
 	if err := provider.Validate(); err != nil {
 		return domainoauth.TokenSet{}, err
 	}
@@ -96,6 +102,9 @@ func (s *Service) Complete(ctx context.Context, provider domainoauth.Provider, s
 	}
 	if strings.TrimSpace(code) == "" {
 		return domainoauth.TokenSet{}, fmt.Errorf("OAuth authorization code must not be empty")
+	}
+	if strings.TrimSpace(binding) == "" {
+		return domainoauth.TokenSet{}, fmt.Errorf("OAuth browser binding must not be empty")
 	}
 	if s.states == nil || s.exchanger == nil || s.tokens == nil {
 		return domainoauth.TokenSet{}, fmt.Errorf("OAuth service dependencies are not configured")
@@ -106,6 +115,9 @@ func (s *Service) Complete(ctx context.Context, provider domainoauth.Provider, s
 	}
 	if pending.ProviderID != provider.ID {
 		return domainoauth.TokenSet{}, fmt.Errorf("OAuth state belongs to provider %q, not %q", pending.ProviderID, provider.ID)
+	}
+	if pending.BindingHash == "" || pending.BindingHash != hashBinding(binding) {
+		return domainoauth.TokenSet{}, fmt.Errorf("OAuth browser binding does not match the authorization request")
 	}
 	if pending.RedirectURI != redirectURI {
 		return domainoauth.TokenSet{}, fmt.Errorf("OAuth redirect URI does not match the authorization request")
@@ -125,6 +137,11 @@ func (s *Service) Complete(ctx context.Context, provider domainoauth.Provider, s
 		return domainoauth.TokenSet{}, fmt.Errorf("persist OAuth token set: %w", err)
 	}
 	return tokens, nil
+}
+
+func hashBinding(binding string) string {
+	sum := sha256.Sum256([]byte(binding))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
 func (s *Service) DeviceAuthorize(ctx context.Context, provider domainoauth.Provider) (domainoauth.DeviceAuthorization, error) {
@@ -186,6 +203,17 @@ func (s *Service) ImportToken(ctx context.Context, providerID string, tokens dom
 		tokens.TokenType = "Bearer"
 	}
 	return s.tokens.Put(ctx, providerID, tokens)
+}
+
+func (s *Service) Delete(ctx context.Context, providerID string) error {
+	if s.tokens == nil {
+		return fmt.Errorf("OAuth token repository is not configured")
+	}
+	deleter, ok := s.tokens.(TokenDeleter)
+	if !ok {
+		return fmt.Errorf("OAuth token repository does not support deletion")
+	}
+	return deleter.Delete(ctx, providerID)
 }
 
 func validateRedirectURI(raw string) error {

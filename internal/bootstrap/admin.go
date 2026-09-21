@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/phongsathornpt/kokekokkor/internal/config"
@@ -51,30 +52,33 @@ func resolveAdminHandler(cfg config.Config, snapshot domaincatalog.Snapshot, cre
 
 	if oauth.handler != nil && catalog != nil {
 		type successRegistrar interface {
-			SetOnSuccess(func(context.Context, string))
+			SetOnSuccess(func(context.Context, string) error)
 		}
 		if registrar, ok := oauth.handler.(successRegistrar); ok && registrar != nil {
-			registrar.SetOnSuccess(func(ctx context.Context, providerID string) {
+			registrar.SetOnSuccess(func(ctx context.Context, providerID string) error {
 				snap, err := catalog.Load(ctx)
 				if err != nil {
-					return
+					return fmt.Errorf("load provider catalog: %w", err)
 				}
 				for _, p := range snap.Providers {
 					if p.ID == providerID {
-						return
+						return nil
 					}
 				}
 				for _, preset := range web.DefaultProviderPresets() {
 					if preset.ID == providerID {
-						_ = catalog.CreateProvider(ctx, domaincatalog.Provider{
+						if err := catalog.CreateProvider(ctx, domaincatalog.Provider{
 							ID:       preset.ID,
 							Protocol: domainprovider.Protocol(preset.Protocol),
 							BaseURL:  preset.BaseURL,
 							Enabled:  true,
-						})
-						return
+						}); err != nil {
+							return fmt.Errorf("create provider %q: %w", providerID, err)
+						}
+						return nil
 					}
 				}
+				return fmt.Errorf("OAuth provider %q has no catalog preset", providerID)
 			})
 		}
 	}

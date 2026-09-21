@@ -46,6 +46,11 @@ func (m *memoryTokens) Get(_ context.Context, providerID string) (domainoauth.To
 	return tokens, nil
 }
 
+func (m *memoryTokens) Delete(_ context.Context, providerID string) error {
+	delete(m.items, providerID)
+	return nil
+}
+
 func testProvider() domainoauth.Provider {
 	return domainoauth.Provider{
 		ID:                  "provider-a",
@@ -64,7 +69,7 @@ func TestServiceBeginBuildsPKCEAuthorization(t *testing.T) {
 	service.now = func() time.Time { return now }
 	states.now = func() time.Time { return now }
 
-	authorization, err := service.Begin(context.Background(), testProvider(), "http://127.0.0.1:8080/oauth/callback")
+	authorization, err := service.Begin(context.Background(), testProvider(), "http://127.0.0.1:8080/oauth/callback", "binding")
 	if err != nil {
 		t.Fatalf("Begin() error = %v", err)
 	}
@@ -100,13 +105,13 @@ func TestServiceCompleteConsumesStateAndPersistsTokens(t *testing.T) {
 	tokens := &memoryTokens{items: make(map[string]domainoauth.TokenSet)}
 	service := NewService(states, exchanger, tokens)
 
-	authorization, err := service.Begin(context.Background(), testProvider(), "https://gateway.example.com/oauth/callback")
+	authorization, err := service.Begin(context.Background(), testProvider(), "https://gateway.example.com/oauth/callback", "binding")
 	if err != nil {
 		t.Fatalf("Begin() error = %v", err)
 	}
 	u, _ := url.Parse(authorization.URL)
 	state := u.Query().Get("state")
-	result, err := service.Complete(context.Background(), testProvider(), state, "authorization-code", "https://gateway.example.com/oauth/callback")
+	result, err := service.Complete(context.Background(), testProvider(), state, "authorization-code", "https://gateway.example.com/oauth/callback", "binding")
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
@@ -116,7 +121,7 @@ func TestServiceCompleteConsumesStateAndPersistsTokens(t *testing.T) {
 	if exchanger.request.Code != "authorization-code" || exchanger.request.CodeVerifier == "" {
 		t.Fatalf("exchange request = %#v", exchanger.request)
 	}
-	if _, err := service.Complete(context.Background(), testProvider(), state, "authorization-code", "https://gateway.example.com/oauth/callback"); !errors.Is(err, ErrStateNotFound) {
+	if _, err := service.Complete(context.Background(), testProvider(), state, "authorization-code", "https://gateway.example.com/oauth/callback", "binding"); !errors.Is(err, ErrStateNotFound) {
 		t.Fatalf("replay error = %v, want ErrStateNotFound", err)
 	}
 }
@@ -140,7 +145,7 @@ func TestServiceRejectsReservedAuthorizationParameter(t *testing.T) {
 	provider := testProvider()
 	provider.AuthorizationParams["state"] = "override"
 	service := NewService(NewMemoryStateRepository(), &fakeExchanger{}, &memoryTokens{items: make(map[string]domainoauth.TokenSet)})
-	if _, err := service.Begin(context.Background(), provider, "https://gateway.example.com/oauth/callback"); err == nil {
+	if _, err := service.Begin(context.Background(), provider, "https://gateway.example.com/oauth/callback", "binding"); err == nil {
 		t.Fatal("Begin() error = nil, want reserved parameter rejection")
 	}
 }
