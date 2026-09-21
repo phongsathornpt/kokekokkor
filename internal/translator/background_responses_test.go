@@ -29,7 +29,7 @@ func TestTranslatedBackgroundResponsesCompletesStoredResource(t *testing.T) {
 
 	response, err := runtime.OpenAIResponsesToAnthropic(context.Background(), provider.Target{
 		ID: "anthropic", Protocol: provider.ProtocolAnthropic, BaseURL: "https://anthropic.example",
-	}, "claude-upstream", http.Header{}, []byte(`{"model":"portable","input":"hello","background":true}`))
+	}, "claude-upstream", http.Header{}, []byte(`{"model":"portable","input":"hello","max_output_tokens":32,"background":true}`))
 	if err != nil {
 		t.Fatalf("OpenAIResponsesToAnthropic() error = %v", err)
 	}
@@ -91,7 +91,7 @@ func TestTranslatedBackgroundResponsesCanBeCancelled(t *testing.T) {
 
 	response, err := runtime.OpenAIResponsesToAnthropic(context.Background(), provider.Target{
 		ID: "anthropic", Protocol: provider.ProtocolAnthropic, BaseURL: "https://anthropic.example",
-	}, "claude-upstream", http.Header{}, []byte(`{"model":"portable","input":"hello","background":true}`))
+	}, "claude-upstream", http.Header{}, []byte(`{"model":"portable","input":"hello","max_output_tokens":32,"background":true}`))
 	if err != nil {
 		t.Fatalf("OpenAIResponsesToAnthropic() error = %v", err)
 	}
@@ -134,7 +134,7 @@ func TestDeletingActiveBackgroundResponseDoesNotRecreateResource(t *testing.T) {
 
 	response, err := runtime.OpenAIResponsesToAnthropic(context.Background(), provider.Target{
 		ID: "anthropic", Protocol: provider.ProtocolAnthropic, BaseURL: "https://anthropic.example",
-	}, "claude-upstream", http.Header{}, []byte(`{"model":"portable","input":"hello","background":true}`))
+	}, "claude-upstream", http.Header{}, []byte(`{"model":"portable","input":"hello","max_output_tokens":32,"background":true}`))
 	if err != nil {
 		t.Fatalf("OpenAIResponsesToAnthropic() error = %v", err)
 	}
